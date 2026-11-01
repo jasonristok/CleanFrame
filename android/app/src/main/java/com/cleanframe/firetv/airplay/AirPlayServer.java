@@ -795,6 +795,7 @@ public final class AirPlayServer {
                     try {
                         float v = Float.parseFloat(text.substring(7).trim());
                         volume = v;
+                        log("volume " + v);
                         AudioReceiver a;
                         synchronized (this) {
                             a = audio;

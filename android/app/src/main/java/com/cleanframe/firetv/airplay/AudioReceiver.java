@@ -41,7 +41,7 @@ final class AudioReceiver {
     private final int[] slotSeq = new int[SLOTS];
     private final long[] slotTime = new long[SLOTS];
     private int expected = -1, buffered, requestedUpTo = -1, ourSeq;
-    private long delivered;
+    private long delivered, received, lastReport;
 
     AudioReceiver(byte[] aesKey, byte[] aesIv, int compression, int samplesPerFrame, InetAddress remote, int remoteControlPort,
                   Sinks.Audio sink, AirPlayServer log) {
@@ -143,6 +143,14 @@ final class AudioReceiver {
     private synchronized void packet(byte[] d, int off, int len) {
         if (stopped || len < 12) return;
         int seq = ((d[off + 2] & 0xff) << 8) | (d[off + 3] & 0xff);
+        long now = System.currentTimeMillis();
+        if (received++ == 0) {
+            lastReport = now;
+            log.log("first audio packet: seq " + seq + ", " + len + " bytes, ct=" + compression);
+        } else if (now - lastReport >= 10000) {
+            lastReport = now;
+            log.log("audio: " + received + " packets received, " + delivered + " frames played");
+        }
         long ts = ((d[off + 4] & 0xffL) << 24) | ((d[off + 5] & 0xff) << 16) | ((d[off + 6] & 0xff) << 8) | (d[off + 7] & 0xff);
         if (compression == 2 && len == 44) return; // ALAC format-only packets at the start
         byte[] payload;

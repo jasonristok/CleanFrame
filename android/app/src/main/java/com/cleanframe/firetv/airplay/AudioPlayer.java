@@ -63,6 +63,7 @@ final class AudioPlayer implements Sinks.Audio {
     @Override
     public void volume(float db) {
         gain = db <= -100f ? 0f : (float) Math.min(1.0, Math.pow(10.0, db / 20.0));
+        Log.i(TAG, "volume " + db + " dB -> gain " + gain);
     }
 
     @Override
@@ -84,13 +85,17 @@ final class AudioPlayer implements Sinks.Audio {
     private int trackChannels;
     private float appliedGain = -1f;
     private MediaCodec codec;
+    private int codecChoice;          // index into DECODERS of the decoder in use
+    private long inputs, outputs, ptsUs;
     private AlacDecoder alac;
     private short[] pcm;
     private byte[] pcmBytes;
+    /** Android's own (Fraunhofer) decoder handles AAC-ELD; some vendor decoders do not. null = the default. */
+    private static final String[] DECODERS = {"c2.android.aac.decoder", "OMX.google.aac.decoder", null};
 
     private void loop() {
         try {
-            if (compression == 8 || compression == 4) startCodec();
+            if (compression == 8 || compression == 4) startCodec(0);
             else if (compression == 2) alac = new AlacDecoder(alacCookie(samplesPerFrame));
             // the most frames that may wait before older ones are dropped: about 0.3 s
             int maxQueued = Math.max(4, RATE * 3 / 10 / samplesPerFrame);
@@ -112,14 +117,7 @@ final class AudioPlayer implements Sinks.Audio {
                 decode(f);
             }
         } finally {
-            if (codec != null) {
-                try {
-                    codec.stop();
-                } catch (RuntimeException ignored) {
-                    // already stopped
-                }
-                codec.release();
-            }
+            releaseCodec();
             if (track != null) {
                 try {
                     track.pause();
@@ -141,29 +139,42 @@ final class AudioPlayer implements Sinks.Audio {
         return c;
     }
 
-    private void startCodec() {
-        try {
-            MediaFormat f = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, RATE, 2);
-            f.setByteBuffer("csd-0", ByteBuffer.wrap(compression == 8 ? ELD_CONFIG : LC_CONFIG));
-            f.setInteger(MediaFormat.KEY_IS_ADTS, 0);
-            // Android's own (Fraunhofer) decoder handles AAC-ELD; some vendor decoders do not.
-            for (String name : new String[] {"c2.android.aac.decoder", "OMX.google.aac.decoder", null}) {
-                MediaCodec c = null;
-                try {
-                    c = name != null ? MediaCodec.createByCodecName(name) : MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_AUDIO_AAC);
-                    c.configure(f, null, null, 0);
-                    c.start();
-                    codec = c;
-                    Log.i(TAG, "audio decoder " + c.getName() + " for ct=" + compression);
-                    return;
-                } catch (Exception notThisOne) {
-                    if (c != null) c.release();
-                }
+    /** Starts the first AAC decoder from DECODERS[from] on that accepts the stream. */
+    private void startCodec(int from) {
+        releaseCodec();
+        MediaFormat f = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, RATE, 2);
+        f.setByteBuffer("csd-0", ByteBuffer.wrap(compression == 8 ? ELD_CONFIG : LC_CONFIG));
+        f.setInteger(MediaFormat.KEY_IS_ADTS, 0);
+        for (int i = from; i < DECODERS.length; i++) {
+            String name = DECODERS[i];
+            MediaCodec c = null;
+            try {
+                c = name != null ? MediaCodec.createByCodecName(name) : MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_AUDIO_AAC);
+                c.configure(f, null, null, 0);
+                c.start();
+                codec = c;
+                codecChoice = i;
+                inputs = 0;
+                outputs = 0;
+                Log.i(TAG, "audio decoder " + c.getName() + " for ct=" + compression);
+                return;
+            } catch (Exception notThisOne) {
+                Log.w(TAG, "audio decoder " + name + " refused ct=" + compression + ": " + notThisOne);
+                if (c != null) c.release();
             }
-        } catch (Exception e) {
-            Log.e(TAG, "no AAC decoder for ct=" + compression, e);
-            codec = null;
         }
+        Log.e(TAG, "no AAC decoder for ct=" + compression);
+    }
+
+    private void releaseCodec() {
+        if (codec == null) return;
+        try {
+            codec.stop();
+        } catch (RuntimeException ignored) {
+            // already stopped
+        }
+        codec.release();
+        codec = null;
     }
 
     private void decode(byte[] f) {
@@ -189,14 +200,19 @@ final class AudioPlayer implements Sinks.Audio {
             if (in >= 0) {
                 ByteBuffer b = codec.getInputBuffer(in);
                 b.clear();
-                b.put(f, 0, Math.min(f.length, b.remaining()));
-                codec.queueInputBuffer(in, 0, Math.min(f.length, b.capacity()), 0, 0);
+                int n = Math.min(f.length, b.remaining());
+                b.put(f, 0, n);
+                codec.queueInputBuffer(in, 0, n, ptsUs, 0);
+                ptsUs += samplesPerFrame * 1000000L / RATE;
+                inputs++;
             }
             MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
             while (true) {
                 int out = codec.dequeueOutputBuffer(info, 0);
                 if (out == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
-                    int channels = codec.getOutputFormat().getInteger(MediaFormat.KEY_CHANNEL_COUNT);
+                    MediaFormat of = codec.getOutputFormat();
+                    int channels = of.getInteger(MediaFormat.KEY_CHANNEL_COUNT);
+                    Log.i(TAG, "audio output " + of.getInteger(MediaFormat.KEY_SAMPLE_RATE) + " Hz, " + channels + " channels");
                     if (channels != trackChannels) openTrack(channels);
                     continue;
                 }
@@ -206,9 +222,15 @@ final class AudioPlayer implements Sinks.Audio {
                     if (pcmBytes == null || pcmBytes.length < info.size) pcmBytes = new byte[info.size];
                     o.position(info.offset);
                     o.get(pcmBytes, 0, info.size);
+                    if (outputs++ == 0) Log.i(TAG, "first decoded audio: " + info.size + " bytes after " + inputs + " frames");
                     writeBytes(pcmBytes, info.size, trackChannels == 0 ? 2 : trackChannels);
                 }
                 codec.releaseOutputBuffer(out, false);
+            }
+            if (outputs == 0 && inputs == 50) {
+                // This decoder takes the frames but returns no sound: try the next one.
+                Log.w(TAG, codec.getName() + " produced no audio from 50 frames; trying another decoder");
+                if (codecChoice + 1 < DECODERS.length) startCodec(codecChoice + 1);
             }
         } catch (RuntimeException e) {
             Log.w(TAG, "AAC frame", e);
@@ -216,13 +238,9 @@ final class AudioPlayer implements Sinks.Audio {
     }
 
     private void flushOutput() {
-        if (codec != null) {
-            try {
-                codec.flush();
-            } catch (RuntimeException ignored) {
-                // nothing queued
-            }
-        }
+        // A decoder flushed before its first output loses the stream configuration (csd), so the
+        // codec is started afresh instead of flushed.
+        if (codec != null) startCodec(codecChoice);
         if (track != null) {
             track.pause();
             track.flush();
@@ -249,6 +267,7 @@ final class AudioPlayer implements Sinks.Audio {
         trackChannels = channels;
         appliedGain = -1f;
         track.play();
+        Log.i(TAG, "audio track " + RATE + " Hz, " + channels + " channels, buffer " + size + " bytes, state " + track.getState());
     }
 
     private void applyGain() {

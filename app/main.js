@@ -2190,11 +2190,19 @@
     else if (name === 'editor') { openSettings(); openEditor('settings'); }
     after();
   }
+  /* The window's size in CSS pixels. Android's WebView (Fire TV) reports innerWidth at the page's
+     minimum zoom, which grows with the unscaled 1920-pixel stage; the root element's client size
+     is the real viewport there and equals innerWidth on TVs and desktop browsers. */
+  function viewport() {
+    var root = document.documentElement, w = root && root.clientWidth, h = root && root.clientHeight;
+    return w > 0 && h > 0 ? { w: w, h: h } : { w: window.innerWidth, h: window.innerHeight };
+  }
   function fit() {
-    var scale = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+    var size = viewport(), scale = Math.min(size.w / 1920, size.h / 1080);
+    if (!(scale > 0)) return;
     stage.style.transform = 'scale(' + scale + ')';
-    stage.style.left = ((window.innerWidth - 1920 * scale) / 2) + 'px';
-    stage.style.top = ((window.innerHeight - 1080 * scale) / 2) + 'px';
+    stage.style.left = ((size.w - 1920 * scale) / 2) + 'px';
+    stage.style.top = ((size.h - 1080 * scale) / 2) + 'px';
   }
   function renderedAction(el) {
     return el.getClientRects().length > 0 && window.getComputedStyle(el).visibility !== 'hidden';
@@ -2261,6 +2269,8 @@
     }
   });
   window.addEventListener('resize', fit);
+  window.addEventListener('load', fit);
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', fit);
 
   /* Platform shells (the Fire TV app) forward keys the web page never receives, such as Back
      and Menu, and tell Home when it returns to the front. */
@@ -2275,6 +2285,7 @@
     airplayEvent: airplayEvent,
     resume: function () {
       release();
+      fit();
       airplayRead();
       photoLink = null; // The app stops the phone link while it is in the background.
       if (DEVICE.refreshOnStart) refreshCatalog();

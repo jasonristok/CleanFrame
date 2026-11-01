@@ -16,5 +16,59 @@
     "source": "https://github.com/simple-icons/simple-icons/blob/develop/icons/tubi.svg",
     "licence": "CC0-1.0",
     "note": "Shape unchanged; white fill for launcher."
+  },
+  {
+    "icon": "zdf",
+    "source": "https://github.com/simple-icons/simple-icons/blob/90646e4bf7f3b89df6c37e65baf3e7bc759a517c/icons/zdf.svg",
+    "licence": "CC0-1.0",
+    "note": "Shape unchanged; white fill for launcher. Used for ZDFmediathek on Fire TV."
+  },
+  {
+    "icon": "rtlplus",
+    "source": "https://github.com/simple-icons/simple-icons/blob/90646e4bf7f3b89df6c37e65baf3e7bc759a517c/icons/rtl.svg",
+    "licence": "CC0-1.0",
+    "note": "RTL mark, shape unchanged; white fill. Shown beside the label RTL+ on Fire TV."
+  },
+  {
+    "icon": "dazn",
+    "source": "https://github.com/simple-icons/simple-icons/blob/90646e4bf7f3b89df6c37e65baf3e7bc759a517c/icons/dazn.svg",
+    "licence": "CC0-1.0",
+    "note": "Shape unchanged; white fill for launcher."
+  },
+  {
+    "icon": "paramountplus",
+    "source": "https://github.com/simple-icons/simple-icons/blob/90646e4bf7f3b89df6c37e65baf3e7bc759a517c/icons/paramountplus.svg",
+    "licence": "CC0-1.0",
+    "note": "Shape unchanged; white fill for launcher."
+  },
+  {
+    "icon": "plex",
+    "source": "https://github.com/simple-icons/simple-icons/blob/90646e4bf7f3b89df6c37e65baf3e7bc759a517c/icons/plex.svg",
+    "licence": "CC0-1.0",
+    "note": "Shape unchanged; white fill for launcher."
+  },
+  {
+    "icon": "kodi",
+    "source": "https://github.com/simple-icons/simple-icons/blob/90646e4bf7f3b89df6c37e65baf3e7bc759a517c/icons/kodi.svg",
+    "licence": "CC0-1.0",
+    "note": "Shape unchanged; white fill for launcher."
+  },
+  {
+    "icon": "jellyfin",
+    "source": "https://github.com/simple-icons/simple-icons/blob/90646e4bf7f3b89df6c37e65baf3e7bc759a517c/icons/jellyfin.svg",
+    "licence": "CC0-1.0",
+    "note": "Shape unchanged; white fill for launcher."
+  },
+  {
+    "icon": "crunchyroll",
+    "source": "https://github.com/simple-icons/simple-icons/blob/90646e4bf7f3b89df6c37e65baf3e7bc759a517c/icons/crunchyroll.svg",
+    "licence": "CC0-1.0",
+    "note": "Shape unchanged; white fill for launcher."
+  },
+  {
+    "icon": "twitch",
+    "source": "https://github.com/simple-icons/simple-icons/blob/90646e4bf7f3b89df6c37e65baf3e7bc759a517c/icons/twitch.svg",
+    "licence": "CC0-1.0",
+    "note": "Shape unchanged; white fill for launcher."
   }
 ]

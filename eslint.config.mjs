@@ -1,5 +1,8 @@
 // Development only: check ES5 grammar and common runtime mistakes.
 export default [{
+  // Unchanged third-party code; see app/assets/vendor/README.md.
+  ignores: ['app/assets/vendor/**']
+}, {
   files: ['app/**/*.js'],
   languageOptions: {
     ecmaVersion: 5,

@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="robots" content="noindex">
+<title>CleanFrame · Eigene Fotos</title>
+<style>
+  :root{--bg:#111312;--card:#1c1f1e;--line:#2c302e;--ink:#f1f0eb;--mute:#a7aaa4;--accent:#e9e6dc;--warn:#ffcf99;--ok:#b9e3c0}
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-text-size-adjust:100%}
+  main{max-width:560px;margin:0 auto;padding:28px 16px calc(40px + env(safe-area-inset-bottom))}
+  h1{font-size:26px;line-height:1.2;font-weight:600;letter-spacing:-.4px;margin:0 0 6px}
+  h2{font-size:15px;font-weight:600;color:var(--mute);margin:32px 0 12px;text-transform:none}
+  p{margin:0 0 12px;color:var(--mute)}
+  button,.pick{font:inherit;font-weight:600;border:0;border-radius:14px;padding:14px 18px;cursor:pointer}
+  .primary{background:var(--accent);color:#141618;width:100%}
+  .primary:disabled{opacity:.45}
+  .pick{display:block;text-align:center;background:var(--accent);color:#141618}
+  .pick input{display:none}
+  .quiet{background:var(--card);color:var(--ink);border:1px solid var(--line);padding:10px 14px;border-radius:12px}
+  .status{min-height:22px;margin:14px 0 0;color:var(--mute)}
+  .status.error{color:var(--warn)}
+  .status.ok{color:var(--ok)}
+  .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+  .grid>*{margin:0 6px 12px}
+  .grid{margin:0 -6px}
+  .photo{background:var(--card);border-radius:14px;overflow:hidden;border:1px solid var(--line)}
+  .photo img,.photo .wait{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;background:#000}
+  .photo .wait{display:flex;align-items:center;justify-content:center;color:var(--mute);font-size:13px}
+  .photo .row{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;font-size:14px}
+  .photo .row button{padding:6px 10px;font-size:13px}
+  #drafts{margin-top:14px}
+  .draft{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px;margin-bottom:14px}
+  .draft canvas{display:block;width:100%;aspect-ratio:16/9;border-radius:10px;background:#000}
+  .draft label{display:block;font-size:13px;color:var(--mute);margin:10px 2px 4px}
+  .draft input[type=range]{width:100%}
+  .draft .row{display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:14px;color:var(--mute)}
+  .pin{display:flex}
+  .pin input{flex:1;min-width:0;width:0;font:inherit;font-size:22px;letter-spacing:6px;text-align:center;padding:12px;border-radius:14px;border:1px solid var(--line);background:var(--card);color:var(--ink);margin-right:10px}
+  [hidden]{display:none!important}
+  small{color:var(--mute)}
+</style>
+</head>
+<body>
+<main>
+  <h1 data-t="title">Eigene Fotos für CleanFrame</h1>
+  <p data-t="intro">Wähle Fotos aus. Sie werden auf dem Fernseher gespeichert und erscheinen unter Hintergrund → Hintergrundbild.</p>
+
+  <section id="pinBox" hidden>
+    <p data-t="pinAsk">Gib den Code ein, den der Fernseher anzeigt.</p>
+    <form class="pin" id="pinForm"><input id="pinInput" size="4" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off"><button class="quiet" data-t="pinOk">OK</button></form>
+  </section>
+
+  <section id="app" hidden>
+    <label class="pick"><span data-t="choose">Fotos auswählen</span><input id="files" type="file" accept="image/*" multiple></label>
+    <div id="drafts"></div>
+    <button class="primary" id="send" hidden data-t="send">Auf den Fernseher senden</button>
+    <p class="status" id="status" aria-live="polite"></p>
+
+    <h2 id="mineTitle" data-t="mine">Auf dem Fernseher</h2>
+    <div class="grid" id="mine"></div>
+    <p id="empty" hidden data-t="empty">Noch keine eigenen Fotos.</p>
+    <small data-t="privacy">Die Fotos bleiben in deinem Heimnetz und auf dem Fernseher. Diese Seite funktioniert nur, solange „Eigene Fotos“ am Fernseher geöffnet ist.</small>
+  </section>
+</main>
+<script>
+(function () {
+  'use strict';
+  var de = /^de\b/i.test(navigator.language || '');
+  var T = de ? {} : {
+    title: 'Your photos for CleanFrame', intro: 'Choose photos. They are stored on the TV and appear under Background → Wallpaper.',
+    pinAsk: 'Enter the code shown on the TV.', pinOk: 'OK', choose: 'Choose photos', send: 'Send to the TV', mine: 'On the TV',
+    empty: 'No photos of your own yet.', privacy: 'Photos stay in your home network and on the TV. This page only works while “Own photos” is open on the TV.'
+  };
+  var M = de ? {
+    position: 'Bildausschnitt', remove: 'Entfernen', confirm: 'Dieses Foto vom Fernseher entfernen?', preparing: 'Wird vorbereitet …',
+    sending: 'Sende Foto {i} von {n} …', sent: 'Gesendet. Der Fernseher bereitet die Fotos vor (einige Sekunden pro Foto).',
+    full: 'Der Fernseher hat schon {limit} eigene Fotos. Entferne zuerst eins.', pin: 'Der Code stimmt nicht.',
+    offline: 'Keine Verbindung zum Fernseher. Ist „Eigene Fotos“ dort noch geöffnet?', unreadable: 'Dieses Bild konnte nicht gelesen werden.',
+    count: '{n} von {limit}', drop: 'Weglassen', slots: 'Noch Platz für {n}.'
+  } : {
+    position: 'Framing', remove: 'Remove', confirm: 'Remove this photo from the TV?', preparing: 'Preparing …',
+    sending: 'Sending photo {i} of {n} …', sent: 'Sent. The TV is preparing the photos (a few seconds each).',
+    full: 'The TV already has {limit} photos of your own. Remove one first.', pin: 'The code is not correct.',
+    offline: 'Cannot reach the TV. Is “Own photos” still open there?', unreadable: 'This image could not be read.',
+    count: '{n} of {limit}', drop: 'Skip', slots: 'Room for {n} more.'
+  };
+  function t(key, values) { return M[key].replace(/\{(\w+)\}/g, function (m, k) { return values && k in values ? values[k] : m; }); }
+  Array.prototype.forEach.call(document.querySelectorAll('[data-t]'), function (el) { var key = el.getAttribute('data-t'); if (T[key]) el.textContent = T[key]; });
+  if (!de) document.documentElement.lang = 'en';
+
+  var $ = function (id) { return document.getElementById(id); };
+  var pin = (location.search.match(/[?&]pin=(\d{4})/) || [])[1] || '', limit = 8, ready = [], pending = [], drafts = [], poll = 0;
+  var W = 1920, H = 1080;
+
+  function status(text, kind) { $('status').textContent = text || ''; $('status').className = 'status' + (kind ? ' ' + kind : ''); }
+  function api(method, path, body) {
+    return fetch('/api/' + path + (path.indexOf('?') < 0 ? '?' : '&') + 'pin=' + encodeURIComponent(pin), {
+      method: method, body: body, headers: body ? { 'Content-Type': 'image/jpeg' } : undefined, cache: 'no-store'
+    }).then(function (response) {
+      if (response.status === 403) { showPin(true); throw new Error('pin'); }
+      return response.json().then(function (data) { data.status = response.status; return data; });
+    }, function () { throw new Error('offline'); });
+  }
+  function showPin(wrong) {
+    $('app').hidden = true; $('pinBox').hidden = false;
+    if (wrong) status(t('pin'), 'error');
+    $('pinInput').focus();
+  }
+  $('pinForm').addEventListener('submit', function (event) {
+    event.preventDefault(); pin = $('pinInput').value.replace(/\D/g, '');
+    $('pinBox').hidden = true; $('app').hidden = false; status(''); refresh();
+  });
+
+  function refresh() {
+    return api('GET', 'list').then(function (data) {
+      limit = data.limit || 8;
+      ready = data.photos.filter(function (p) { return p.state === 'ready'; });
+      pending = data.photos.filter(function (p) { return p.state === 'pending'; });
+      renderMine();
+      clearTimeout(poll);
+      if (pending.length) poll = setTimeout(refresh, 2500);
+    }).catch(function (error) { if (error.message === 'offline') status(t('offline'), 'error'); });
+  }
+  function renderMine() {
+    var box = $('mine'), all = ready.concat(pending);
+    box.innerHTML = '';
+    $('mineTitle').textContent = (T.mine || 'Auf dem Fernseher') + ' · ' + t('count', { n: all.length, limit: limit });
+    $('empty').hidden = all.length > 0;
+    all.forEach(function (p) {
+      var card = document.createElement('div'), media, row = document.createElement('div'), remove = document.createElement('button');
+      card.className = 'photo';
+      if (p.state === 'ready') { media = document.createElement('img'); media.alt = ''; media.src = '/api/thumb?id=' + p.id + '&pin=' + pin; }
+      else { media = document.createElement('div'); media.className = 'wait'; media.textContent = t('preparing'); }
+      row.className = 'row';
+      row.appendChild(document.createElement('span'));
+      remove.className = 'quiet'; remove.type = 'button'; remove.textContent = t('remove');
+      remove.addEventListener('click', function () {
+        if (!confirm(t('confirm'))) return;
+        api('POST', 'delete?id=' + p.id).then(refresh, function (error) { if (error.message === 'offline') status(t('offline'), 'error'); });
+      });
+      row.appendChild(remove);
+      card.appendChild(media); card.appendChild(row); box.appendChild(card);
+    });
+    updateSend();
+  }
+
+  /* Each chosen photo is cropped to 16:9 here; the slider moves the crop along the photo's long side. */
+  $('files').addEventListener('change', function () {
+    Array.prototype.forEach.call(this.files, function (file) {
+      var url = URL.createObjectURL(file), image = new Image();
+      image.onload = function () { addDraft(image, url); };
+      image.onerror = function () { URL.revokeObjectURL(url); status(t('unreadable') + ' (' + file.name + ')', 'error'); };
+      image.src = url;
+    });
+    this.value = '';
+  });
+  function addDraft(image, url) {
+    var draft = { image: image, url: url, pos: 50 }, box = document.createElement('div'), canvas = document.createElement('canvas');
+    var wide = image.naturalWidth / image.naturalHeight > W / H, label = document.createElement('label'), range = document.createElement('input');
+    var row = document.createElement('div'), skip = document.createElement('button');
+    box.className = 'draft'; canvas.width = 640; canvas.height = 360;
+    label.textContent = t('position'); range.type = 'range'; range.min = 0; range.max = 100; range.value = 50;
+    range.addEventListener('input', function () { draft.pos = +range.value; preview(); });
+    row.className = 'row'; row.appendChild(document.createElement('span'));
+    skip.className = 'quiet'; skip.type = 'button'; skip.textContent = t('drop');
+    skip.addEventListener('click', function () { drafts.splice(drafts.indexOf(draft), 1); box.remove(); URL.revokeObjectURL(url); updateSend(); });
+    row.appendChild(skip);
+    box.appendChild(canvas);
+    if (Math.abs(image.naturalWidth / image.naturalHeight - W / H) > .02) { box.appendChild(label); box.appendChild(range); }
+    box.appendChild(row);
+    $('drafts').appendChild(box);
+    draft.box = box; draft.wide = wide;
+    function preview() { draw(canvas, draft); }
+    preview(); drafts.push(draft); updateSend();
+  }
+  function crop(draft) {
+    var iw = draft.image.naturalWidth, ih = draft.image.naturalHeight, s = Math.max(W / iw, H / ih), cw = W / s, ch = H / s;
+    return { x: (iw - cw) * draft.pos / 100, y: (ih - ch) * draft.pos / 100, w: cw, h: ch };
+  }
+  function draw(canvas, draft) {
+    var c = crop(draft), ctx = canvas.getContext('2d');
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(draft.image, draft.wide ? c.x : (draft.image.naturalWidth - c.w) / 2, draft.wide ? (draft.image.naturalHeight - c.h) / 2 : c.y, c.w, c.h, 0, 0, canvas.width, canvas.height);
+  }
+  function updateSend() {
+    var room = Math.max(0, limit - ready.length - pending.length);
+    $('send').hidden = !drafts.length;
+    $('send').disabled = drafts.length > room;
+    if (drafts.length > room) status(room ? t('slots', { n: room }) : t('full', { limit: limit }), 'error');
+  }
+  $('send').addEventListener('click', function () {
+    var list = drafts.slice(), i = 0;
+    $('send').disabled = true;
+    (function next() {
+      if (i >= list.length) { status(t('sent'), 'ok'); refresh(); return; }
+      var draft = list[i], canvas = document.createElement('canvas');
+      status(t('sending', { i: i + 1, n: list.length }));
+      canvas.width = W; canvas.height = H; draw(canvas, draft);
+      canvas.toBlob(function (blob) {
+        api('POST', 'upload', blob).then(function (data) {
+          if (data.status === 409) { status(t('full', { limit: limit }), 'error'); $('send').disabled = false; refresh(); return; }
+          drafts.splice(drafts.indexOf(draft), 1); draft.box.remove(); URL.revokeObjectURL(draft.url);
+          i++; next();
+        }, function (error) { $('send').disabled = false; if (error.message === 'offline') status(t('offline'), 'error'); });
+      }, 'image/jpeg', .92);
+    })();
+  });
+
+  if (!/^\d{4}$/.test(pin)) showPin(false);
+  else { $('app').hidden = false; refresh(); }
+})();
+</script>
+</body>
+</html>

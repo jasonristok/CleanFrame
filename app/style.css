@@ -633,3 +633,62 @@ html,body{width:100%;height:100%;overflow:hidden;background:#000}
 .l-list .quiet-utils.is-text .u-content>*+*{margin-left:0;margin-right:0}
 .quiet-utils.is-text .u-content>*+*{margin-left:0}
 .l-list .quiet-utils.is-text .u .u-content>*+*{margin-right:0}
+
+/* ---------- Date, weather and the clock/weather/language settings ---------- */
+.cap-info{display:flex;align-items:center;margin-top:2px;opacity:.92}
+.cap-date,.cap-weather{display:inline-flex;align-items:center;white-space:nowrap}
+.stage .cap-weather-ico{width:30px;height:30px;margin-right:8px;stroke-width:1.8}
+.cap-cond{margin-left:10px;opacity:.8}
+.cap-sep{margin:0 14px;opacity:.6}
+.l-list .cap-info{justify-content:flex-end}
+.bg-photo.l-dock.has-dock-clock-ink .caption .cap-info{color:var(--dock-clock-ink);text-shadow:none}
+.bg-photo.has-adaptive-ink.l-dock .caption .cap-info{color:var(--tl-clock-ink)}
+.bg-photo.has-adaptive-ink.l-dock.adaptive-tl-dark .caption .cap-info{text-shadow:var(--tl-shadow)}
+.settings-overview.is-dense .settings-group{height:98px;padding-top:8px;padding-bottom:8px}
+.settings-overview.is-dense .settings-group+.settings-group{margin-top:6px}
+.settings-overview.is-dense .settings-group-name{font-size:38px;line-height:46px}
+.detail-info .setting-section+.setting-section{margin-top:28px}
+.detail-info .is-horizontal .setting-choice{min-height:84px}
+.detail-weather .appearance-rows{top:260px}
+.detail-weather .setting-choice{min-height:84px}
+
+/* ---------- Own photos ---------- */
+.setting-icon{display:flex;align-items:center;justify-content:center;background:var(--line,rgba(255,255,255,.08))}
+.setting-icon .ico{width:30px;height:30px}
+.detail-background .setting-section+.setting-section{margin-top:20px}
+.detail-photos .appearance-rows{top:260px}
+.detail-photos .setting-choice{min-height:84px}
+.detail-photos .settings-status{left:858px;top:288px;width:922px;height:518px}
+.photo-link{display:flex;align-items:center;height:518px;padding:48px;border-radius:28px;background:var(--ground);box-shadow:0 0 0 1px var(--line)}
+.photo-qr{flex:none;width:360px;height:360px;margin-right:48px;padding:0;border-radius:18px;overflow:hidden;background:#fff}
+.photo-qr .qr{display:block;width:360px;height:360px}
+.photo-link-copy{min-width:0;color:var(--mute);font-size:26px;line-height:36px}
+.photo-link-copy>*+*{margin-top:12px}
+.photo-link-title{color:var(--ink);font-size:38px;line-height:48px;font-weight:500;letter-spacing:-.5px}
+.photo-link-url{color:var(--ink);font-size:34px;line-height:44px;font-weight:500;letter-spacing:-.3px;word-break:break-all}
+.photo-link-pin strong{margin-left:8px;color:var(--ink);font-size:44px;font-weight:600;letter-spacing:6px}
+.photo-link-state{color:var(--ink);opacity:.82}
+.photo-link.is-error .photo-link-title{color:var(--warn)}
+
+/* ---------- AirPlay (Fire TV's built-in receiver) ---------- */
+.detail-airplay .setting-section+.setting-section,.detail-airplayname .setting-section+.setting-section{margin-top:22px}
+.detail-airplay .setting-choice{min-height:80px}
+.detail-airplay .is-horizontal .setting-choice{min-height:84px}
+.detail-airplay .setting-reason{font-size:24px;line-height:33px}
+.detail-airplayname .appearance-rows{top:260px}
+.detail-airplayname .setting-choice{min-height:76px}
+.detail-airplay .settings-status,.detail-airplayname .settings-status{left:858px;top:288px;width:922px;height:518px}
+.airplay-panel{display:flex;align-items:flex-start;height:518px;padding:52px 56px;border-radius:28px;background:var(--ground);box-shadow:0 0 0 1px var(--line);color:var(--mute);font-size:28px;line-height:39px}
+.airplay-glyph{flex:none;display:flex;align-items:center;justify-content:center;width:132px;height:132px;margin-right:44px;border-radius:32px;background:var(--line,rgba(255,255,255,.08));color:var(--ink)}
+.airplay-glyph .ico{width:76px;height:76px;stroke-width:1.4}
+.airplay-copy{min-width:0}
+.airplay-copy>*+*{margin-top:12px}
+.airplay-title{color:var(--ink);font-size:40px;line-height:50px;font-weight:500;letter-spacing:-.5px}
+.airplay-name{margin-top:4px;color:var(--ink);font-size:30px;line-height:40px;opacity:.82}
+.airplay-steps{margin:6px 0 0;padding-left:1.3em;color:var(--ink)}
+.airplay-steps li+li{margin-top:4px}
+.airplay-note{font-size:24px;line-height:33px}
+.airplay-code{color:var(--ink);font-size:110px;line-height:120px;font-weight:600;letter-spacing:22px}
+.airplay-panel.is-live .airplay-glyph{background:var(--ink);color:var(--ground)}
+.airplay-panel.is-error .airplay-title{color:var(--warn)}
+.airplay-panel.is-off .airplay-glyph{opacity:.5}

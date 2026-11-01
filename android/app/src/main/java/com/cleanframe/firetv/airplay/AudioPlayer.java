@@ -1,0 +1,273 @@
+/*
+ * CleanFrame AirPlay receiver. SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * Plays the AirPlay audio stream: AAC-ELD (screen mirroring) and AAC-LC through Android's
+ * MediaCodec, Apple Lossless (music) through AlacDecoder, raw PCM directly. One thread decodes
+ * and writes to an AudioTrack; a short queue in front of it drops the oldest frames when it
+ * falls behind, so sound stays close to the picture.
+ */
+package com.cleanframe.firetv.airplay;
+
+import android.media.AudioAttributes;
+import android.media.AudioFormat;
+import android.media.AudioManager;
+import android.media.AudioTrack;
+import android.media.MediaCodec;
+import android.media.MediaFormat;
+import android.os.Build;
+import android.os.Process;
+import android.util.Log;
+
+import java.nio.ByteBuffer;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.TimeUnit;
+
+final class AudioPlayer implements Sinks.Audio {
+    private static final String TAG = "CleanFrameAirPlay";
+    private static final int RATE = 44100;
+    private static final byte[] ELD_CONFIG = {(byte) 0xf8, (byte) 0xe8, 0x50, 0x00};
+    private static final byte[] LC_CONFIG = {0x12, 0x10};
+    private static final byte[] FLUSH = new byte[0];
+
+    private final ArrayBlockingQueue<byte[]> queue = new ArrayBlockingQueue<byte[]>(400);
+    private volatile boolean running;
+    private volatile float gain = 1f;
+    private int compression, samplesPerFrame;
+    private Thread thread;
+
+    @Override
+    public void start(int ct, int spf) {
+        compression = ct;
+        samplesPerFrame = spf > 0 ? spf : ct == 8 ? 480 : ct == 2 ? 352 : 1024;
+        running = true;
+        thread = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO);
+                try {
+                    loop();
+                } catch (RuntimeException e) {
+                    Log.e(TAG, "audio stopped", e);
+                }
+            }
+        }, "AirPlay-audio-out");
+        thread.start();
+    }
+
+    @Override
+    public void frame(byte[] data, long rtpTimestamp) {
+        if (!running) return;
+        while (!queue.offer(data)) queue.poll();
+    }
+
+    @Override
+    public void volume(float db) {
+        gain = db <= -100f ? 0f : (float) Math.min(1.0, Math.pow(10.0, db / 20.0));
+    }
+
+    @Override
+    public void flush() {
+        queue.clear();
+        queue.offer(FLUSH);
+    }
+
+    @Override
+    public void release() {
+        running = false;
+        queue.clear();
+        if (thread != null) thread.interrupt();
+    }
+
+    /* ---------- the playback thread ---------- */
+
+    private AudioTrack track;
+    private int trackChannels;
+    private float appliedGain = -1f;
+    private MediaCodec codec;
+    private AlacDecoder alac;
+    private short[] pcm;
+    private byte[] pcmBytes;
+
+    private void loop() {
+        try {
+            if (compression == 8 || compression == 4) startCodec();
+            else if (compression == 2) alac = new AlacDecoder(alacCookie(samplesPerFrame));
+            // the most frames that may wait before older ones are dropped: about 0.3 s
+            int maxQueued = Math.max(4, RATE * 3 / 10 / samplesPerFrame);
+            while (running) {
+                byte[] f;
+                try {
+                    f = queue.poll(200, TimeUnit.MILLISECONDS);
+                } catch (InterruptedException e) {
+                    break;
+                }
+                if (f == null) continue;
+                if (f == FLUSH) {
+                    flushOutput();
+                    continue;
+                }
+                if (queue.size() > maxQueued) {
+                    while (queue.size() > maxQueued / 3) queue.poll();
+                }
+                decode(f);
+            }
+        } finally {
+            if (codec != null) {
+                try {
+                    codec.stop();
+                } catch (RuntimeException ignored) {
+                    // already stopped
+                }
+                codec.release();
+            }
+            if (track != null) {
+                try {
+                    track.pause();
+                    track.flush();
+                } catch (RuntimeException ignored) {
+                    // released below
+                }
+                track.release();
+            }
+        }
+    }
+
+    private static byte[] alacCookie(int frameLength) {
+        byte[] c = AlacDecoder.AIRPLAY_COOKIE.clone();
+        c[0] = (byte) (frameLength >>> 24);
+        c[1] = (byte) (frameLength >>> 16);
+        c[2] = (byte) (frameLength >>> 8);
+        c[3] = (byte) frameLength;
+        return c;
+    }
+
+    private void startCodec() {
+        try {
+            MediaFormat f = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, RATE, 2);
+            f.setByteBuffer("csd-0", ByteBuffer.wrap(compression == 8 ? ELD_CONFIG : LC_CONFIG));
+            f.setInteger(MediaFormat.KEY_IS_ADTS, 0);
+            // Android's own (Fraunhofer) decoder handles AAC-ELD; some vendor decoders do not.
+            for (String name : new String[] {"c2.android.aac.decoder", "OMX.google.aac.decoder", null}) {
+                MediaCodec c = null;
+                try {
+                    c = name != null ? MediaCodec.createByCodecName(name) : MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_AUDIO_AAC);
+                    c.configure(f, null, null, 0);
+                    c.start();
+                    codec = c;
+                    Log.i(TAG, "audio decoder " + c.getName() + " for ct=" + compression);
+                    return;
+                } catch (Exception notThisOne) {
+                    if (c != null) c.release();
+                }
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "no AAC decoder for ct=" + compression, e);
+            codec = null;
+        }
+    }
+
+    private void decode(byte[] f) {
+        if (compression == 2 && alac != null) {
+            int need = alac.frameLength() * alac.channels();
+            if (pcm == null || pcm.length < need) pcm = new short[need];
+            int n = alac.decode(f, 0, f.length, pcm);
+            if (n > 0) writeShorts(pcm, n * alac.channels(), alac.channels());
+        } else if (compression == 1) {
+            // 16-bit big-endian PCM
+            int n = f.length / 2;
+            if (pcm == null || pcm.length < n) pcm = new short[n];
+            for (int i = 0; i < n; i++) pcm[i] = (short) (((f[2 * i] & 0xff) << 8) | (f[2 * i + 1] & 0xff));
+            writeShorts(pcm, n, 2);
+        } else if (codec != null) {
+            decodeAac(f);
+        }
+    }
+
+    private void decodeAac(byte[] f) {
+        try {
+            int in = codec.dequeueInputBuffer(20000);
+            if (in >= 0) {
+                ByteBuffer b = codec.getInputBuffer(in);
+                b.clear();
+                b.put(f, 0, Math.min(f.length, b.remaining()));
+                codec.queueInputBuffer(in, 0, Math.min(f.length, b.capacity()), 0, 0);
+            }
+            MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
+            while (true) {
+                int out = codec.dequeueOutputBuffer(info, 0);
+                if (out == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                    int channels = codec.getOutputFormat().getInteger(MediaFormat.KEY_CHANNEL_COUNT);
+                    if (channels != trackChannels) openTrack(channels);
+                    continue;
+                }
+                if (out < 0) break;
+                ByteBuffer o = codec.getOutputBuffer(out);
+                if (o != null && info.size > 0) {
+                    if (pcmBytes == null || pcmBytes.length < info.size) pcmBytes = new byte[info.size];
+                    o.position(info.offset);
+                    o.get(pcmBytes, 0, info.size);
+                    writeBytes(pcmBytes, info.size, trackChannels == 0 ? 2 : trackChannels);
+                }
+                codec.releaseOutputBuffer(out, false);
+            }
+        } catch (RuntimeException e) {
+            Log.w(TAG, "AAC frame", e);
+        }
+    }
+
+    private void flushOutput() {
+        if (codec != null) {
+            try {
+                codec.flush();
+            } catch (RuntimeException ignored) {
+                // nothing queued
+            }
+        }
+        if (track != null) {
+            track.pause();
+            track.flush();
+            track.play();
+        }
+    }
+
+    @SuppressWarnings("deprecation") // the plain constructor for Android 5
+    private void openTrack(int channels) {
+        if (track != null) track.release();
+        int mask = channels == 1 ? AudioFormat.CHANNEL_OUT_MONO : AudioFormat.CHANNEL_OUT_STEREO;
+        int min = AudioTrack.getMinBufferSize(RATE, mask, AudioFormat.ENCODING_PCM_16BIT);
+        int size = Math.max(min * 2, RATE * 2 * channels / 8); // at least 125 ms
+        if (Build.VERSION.SDK_INT >= 23) {
+            track = new AudioTrack.Builder()
+                .setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MOVIE).build())
+                .setAudioFormat(new AudioFormat.Builder().setSampleRate(RATE).setEncoding(AudioFormat.ENCODING_PCM_16BIT).setChannelMask(mask).build())
+                .setBufferSizeInBytes(size)
+                .setTransferMode(AudioTrack.MODE_STREAM)
+                .build();
+        } else {
+            track = new AudioTrack(AudioManager.STREAM_MUSIC, RATE, mask, AudioFormat.ENCODING_PCM_16BIT, size, AudioTrack.MODE_STREAM);
+        }
+        trackChannels = channels;
+        appliedGain = -1f;
+        track.play();
+    }
+
+    private void applyGain() {
+        float g = gain;
+        if (g != appliedGain) {
+            appliedGain = g;
+            track.setVolume(g);
+        }
+    }
+
+    private void writeShorts(short[] s, int count, int channels) {
+        if (track == null || trackChannels != channels) openTrack(channels);
+        applyGain();
+        track.write(s, 0, count);
+    }
+
+    private void writeBytes(byte[] b, int count, int channels) {
+        if (track == null || trackChannels != channels) openTrack(channels);
+        applyGain();
+        track.write(b, 0, count);
+    }
+}

@@ -1,0 +1,65 @@
+plugins {
+    id 'com.android.application'
+}
+
+// The APK carries the same web interface as the Samsung widget: the repository's app/ folder.
+def webApp = rootProject.file('../app')
+def packageJson = new groovy.json.JsonSlurper().parse(rootProject.file('../package.json'))
+
+// Optional stable signing, so updates install over the previous version and keep your settings.
+// Without these variables the build falls back to Android's debug key (see docs/firetv.md).
+def keystore = System.getenv('CF_KEYSTORE')
+def hasKeystore = keystore != null && !keystore.isEmpty() && file(keystore).isFile()
+
+android {
+    namespace 'com.cleanframe.firetv'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.cleanframe.firetv'
+        minSdk 22        // Fire OS 5 and later; tested target is Fire OS 7/8
+        targetSdk 34
+        versionCode Integer.parseInt(System.getenv('GITHUB_RUN_NUMBER') ?: '1')
+        versionName packageJson.version + '-firetv'
+    }
+
+    sourceSets {
+        main {
+            // app/ (the shared interface) plus src/main/assets (the phone photo page).
+            assets.srcDirs = [webApp, 'src/main/assets']
+        }
+    }
+
+    signingConfigs {
+        stable {
+            if (hasKeystore) {
+                storeFile file(keystore)
+                storePassword System.getenv('CF_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('CF_KEY_ALIAS') ?: 'cleanframe'
+                keyPassword System.getenv('CF_KEY_PASSWORD') ?: System.getenv('CF_KEYSTORE_PASSWORD')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig hasKeystore ? signingConfigs.stable : signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    androidResources {
+        // Photos and fonts are already compressed; storing them uncompressed speeds up loading.
+        noCompress 'jpg', 'jpeg', 'png', 'woff2', 'ttf'
+    }
+
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+}

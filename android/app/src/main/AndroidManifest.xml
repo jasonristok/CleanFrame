@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Outgoing: only the weather request (api.open-meteo.com). Incoming: the phone photo page,
+         which listens in the home network only while the Own photos screen is open, and the
+         AirPlay receiver (home network only, while AirPlay is switched on). -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Finds Fire TV's Smart Home dashboard, a system app that is otherwise hidden from other apps
+         on Fire OS 8. This sideloaded app is not distributed through an app store. -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+    <!-- AirPlay receiver: stays reachable in the background (foreground service with a quiet
+         notification), starts with the Fire TV, keeps Wi-Fi at full speed during a session. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Optional, granted only by the owner over ADB (see docs/firetv.md): lets the mirror picture
+         open by itself while another app is in front on Fire OS 8. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+
+    <!-- Android 11+ (Fire OS 8) only shows other apps to an app that declares what it looks for. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.HOME" />
+        </intent>
+        <intent>
+            <action android:name="android.settings.SETTINGS" />
+        </intent>
+        <package android:name="com.amazon.smarthomemapviewapp" />
+    </queries>
+
+    <application
+        android:allowBackup="true"
+        android:banner="@drawable/banner"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="false"
+        android:theme="@style/CleanFrame"
+        android:usesCleartextTraffic="false">
+
+        <!-- Not a HOME activity: Fire OS does not let third-party apps replace its Home screen.
+             A redirect app (see docs/firetv.md) opens this activity when Home is pressed. -->
+        <activity
+            android:name=".MainActivity"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:screenOrientation="landscape"
+            android:stateNotNeeded="true"
+            android:windowSoftInputMode="stateAlwaysHidden">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- AirPlay (com.cleanframe.firetv.airplay, GPL-3.0-or-later): the mirrored picture in its
+             own task, so Back returns to whatever was open before. -->
+        <activity
+            android:name=".airplay.MirrorActivity"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:screenOrientation="landscape"
+            android:taskAffinity="com.cleanframe.firetv.mirror" />
+
+        <service
+            android:name=".airplay.AirPlayService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+
+        <receiver
+            android:name=".airplay.BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

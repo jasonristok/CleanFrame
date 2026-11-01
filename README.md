@@ -10,6 +10,10 @@ I built CleanFrame for one TV: my own Samsung The Frame, running Tizen. I'm shar
 
 I highly recommend forking it and building on top of it, ideally with a coding agent that can help you understand and adapt the setup. Start with the browser preview, make the interface your own, then work through TV installation when you're ready. Native Home/startup changes need particular care; the setup guide covers the risks and recovery steps.
 
+## Fire TV
+
+This fork adds a Fire TV app (Fire OS 7/8: Stick 4K, 4K Max, Cube) with a German interface, a 24-hour clock, date and weather, and recognition of German streaming services. GitHub Actions builds the APK; the Home button is redirected to CleanFrame with Home on Fire. Setup guide (German): [docs/firetv.md](docs/firetv.md). Vega OS sticks cannot install it.
+
 ## Try the interface
 
 You need Node.js 22.13+ (22 LTS), or 24+, and Python 3.10+ to run the browser preview.

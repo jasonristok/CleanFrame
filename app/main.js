@@ -13,7 +13,33 @@
   var KEYS = { 37: 'left', 38: 'up', 39: 'right', 40: 'down', 13: 'ok', 27: 'back', 8: 'back', 10009: 'back', 461: 'back' };
   var FULL = 'Home holds nine apps. Remove one first.', LAST = 'Home needs one app';
 
-  var PRIMARY_APPS = [
+  /* Device capabilities. device.js (Tizen) and device-firetv.js describe their platform. */
+  var DEVICE = window.FrameDevice || {}, FEATURES = DEVICE.features || {}, DEFAULTS = DEVICE.defaults || {};
+  var SYSTEM = DEVICE.system || { name: 'Samsung', value: 'Home and TV settings', home: 'Samsung Home', homeDescription: 'Open Samsung’s Home screen', settings: 'TV settings', settingsDescription: 'Picture, sound and network settings' };
+  var MARK_BRANDS = DEVICE.markBrands || ['hbomax', 'spotify', 'tubi'];
+
+  /* Language. English source text is the lookup key; see assets/strings.js. */
+  var STRINGS = window.CleanFrameStrings || {}, CALENDAR = window.CleanFrameCalendar || {}, LANG = 'en', langRevision = 0;
+  function tr(text, values) {
+    var table = STRINGS[LANG], out = table && table.hasOwnProperty(text) ? table[text] : text;
+    if (values) out = out.replace(/\{(\w+)\}/g, function (match, key) { return values.hasOwnProperty(key) ? String(values[key]) : match; });
+    return out;
+  }
+  function systemLanguage() {
+    var nav = window.navigator || {}, code = String(DEVICE.locale && DEVICE.locale() || nav.language || (nav.languages && nav.languages[0]) || 'en').toLowerCase();
+    return code.indexOf('de') === 0 ? 'de' : 'en';
+  }
+  function resolveLanguage(c) {
+    var next = c && c.lang !== 'auto' && STRINGS[c.lang] ? c.lang : c && c.lang === 'en' ? 'en' : systemLanguage();
+    if (next !== 'en' && !STRINGS[next]) next = 'en';
+    if (next !== LANG) { LANG = next; langRevision++; widthCache = {}; }
+    document.documentElement.lang = LANG === 'de' ? 'de-DE' : 'en-AU';
+  }
+  var PLACES = (window.CleanFramePlaces || []).filter(function (p) { return p && typeof p.id === 'string' && /^[a-z0-9-]{1,40}$/.test(p.id) && isFinite(p.lat) && isFinite(p.lon); });
+  var PREF_VALUES = { lang: ['auto', 'de', 'en'], clock: ['24', '12'], date: ['on', 'off'], place: ['off'].concat(PLACES.map(function (p) { return p.id; })) };
+  var PREF_NAMES = { auto: 'Automatic', de: 'Deutsch', en: 'English', '24': '24-hour', '12': '12-hour', on: 'Show', off: 'Off' };
+
+  var PRIMARY_APPS = DEVICE.primaryApps ? DEVICE.primaryApps() : [
     { id: 'stremio', name: 'Stremio', mark: true, appId: 'IkWsFHtOY9.Stremio' },
     { id: 'netflix', name: 'Netflix', mark: true, appId: 'org.tizen.netflix-app' },
     { id: 'disneyplus', name: 'Disney+', mark: true, appId: 'MCmYXNxgcu.DisneyPlus' },
@@ -25,8 +51,20 @@
     { id: 'applemusic', name: 'Apple Music', mark: true, appId: 'org.tizen.apple.apple-music' }
   ];
   var PRIMARY = PRIMARY_APPS.map(function (a) { return a.id; }), APPS = PRIMARY_APPS.slice(), ALPHA = [];
-  var WALLS = window.CleanFrameWallpapers || [{ id: 'misty', name: 'Misty coast', tone: 'light', ut: { tr: 'mist', br: 'mist' }, frostVeil: .20 }];
+  var BUILTIN_WALLS = window.CleanFrameWallpapers || [{ id: 'misty', name: 'Misty coast', tone: 'light', ut: { tr: 'mist', br: 'mist' }, frostVeil: .20 }];
   var ADAPTIVE_INK = window.CleanFrameAdaptiveInk || {};
+  /* Own photos (Fire TV) follow the bundled gallery. Their files live in the app, under /userwall/. */
+  var PHOTO_LIMIT = 8;
+  function ownWalls() {
+    var list = DEVICE.photos ? DEVICE.photos.list() : [];
+    return list.filter(function (p) { return p.state === 'ready'; }).map(function (p, i) {
+      var m = p.meta, ut = m.ut && typeof m.ut === 'object' ? m.ut : {};
+      return { id: p.id, custom: true, number: m.number > 0 ? Math.floor(m.number) : i + 1, name: '',
+        tone: m.tone === 'light' ? 'light' : 'dark', ut: { tr: ut.tr === 'mist' ? 'mist' : 'light', br: ut.br === 'mist' ? 'mist' : 'light' },
+        frostVeil: [.12, .20, .30].indexOf(m.frostVeil) >= 0 ? m.frostVeil : .12, listColumn: [2, 3].indexOf(m.listColumn) >= 0 ? m.listColumn : 0, clockMist: !!m.clockMist, dockQuiet: false };
+    });
+  }
+  var WALLS = BUILTIN_WALLS.concat(ownWalls());
   WALLS.forEach(function (w) { w.ut = w.ut || { tr: 'light', br: 'light' }; w.frostVeil = w.frostVeil || .12; });
   var MODES = [
     { id: 'fixed', name: 'Fixed', min: 0 }, { id: 'open', name: 'Each time Home opens', min: 0 },
@@ -47,9 +85,9 @@
   var LOOK_VALUES = { bg: ['dark', 'light', 'photo'], layout: ['list', 'dock'], apps: ['icons', 'both', 'text'], font: Object.keys(FONTS).filter(function (id) { return id === 'manrope' || PRIVATE_FONTS.indexOf(id) >= 0; }), controls: ['icons', 'both', 'text'], focus: ['type', 'glass'], material: ['soft', 'frost', 'tint'] };
   var LOOK_NAMES = { bg: 'Background', layout: 'Layout', apps: 'Apps', font: 'Font', controls: 'Home controls', focus: 'Focus', material: 'Material' };
   var VALUE_NAMES = { dark: 'Dark', light: 'Light', photo: 'Photo', list: 'List', dock: 'Dock', type: 'Type', glass: 'Glass', soft: 'Soft', frost: 'Frost', tint: 'Clear tint', icons: 'Icons', both: 'Icons and text', text: 'Text' };
-  var UTIL = { art: ['Art Mode', 'art'], apps: ['All apps', 'apps'], arrange: ['Arrange', 'arrange'], settings: ['Settings', 'settings'] };
+  var UTIL = { art: ['Art Mode', 'art'], apps: ['All apps', 'apps'], smarthome: ['Smart Home', 'smarthome'], airplay: ['AirPlay', 'mirror'], arrange: ['Arrange', 'arrange'], settings: ['Settings', 'settings'] };
   var MSG = {
-    leave: { title: 'Leave Home?', line: 'Open Samsung Home?', note: '', actions: [['stay', 'Stay'], ['samsung', 'Samsung Home']] }
+    leave: function () { return { title: tr('Leave Home?'), line: tr('Open {home}?', { home: tr(SYSTEM.home) }), note: '', actions: [['stay', tr('Stay')], ['samsung', tr(SYSTEM.home)]] }; }
   };
   var SVG = {
     art: '<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><circle cx="9" cy="9.8" r="1.5"/><path d="m4.5 17.5 4.5-4.5 3 3 2.5-2.5 5 5"/>',
@@ -57,6 +95,10 @@
     arrange: '<path d="M4 8.5h14M15 5.5l3 3-3 3M20 15.5H6M9 12.5l-3 3 3 3"/>',
     settings: '<path d="m9 3-.6 2.4-2 1.2L4 6l-2 3.5L3.8 11v2L2 14.5 4 18l2.4-.6 2 1.2L9 21h6l.6-2.4 2-1.2 2.4.6 2-3.5-1.8-1.5v-2L22 9.5 20 6l-2.4.6-2-1.2L15 3Z"/><circle cx="12" cy="12" r="3.2"/>',
     home: '<path d="M4 11 12 4.5l8 6.5v8a1 1 0 0 1-1 1h-4.5v-6h-5v6H5a1 1 0 0 1-1-1Z"/>',
+    smarthome: '<path d="M4 11 12 4.5l8 6.5v8a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1Z"/><path d="M8.6 14.4a4.8 4.8 0 0 1 6.8 0M10.3 16.4a2.4 2.4 0 0 1 3.4 0"/><path d="M12 18.6v.1"/>',
+    /* Screen mirroring: a phone sending its picture to a TV. Original outline, not Apple's AirPlay mark. */
+    mirror: '<rect x="2.5" y="4" width="15" height="10" rx="1.6"/><path d="M7 17.5h6"/><rect x="15.5" y="9" width="6" height="11" rx="1.4"/><path d="M18 18h1"/>',
+    photo: '<rect x="3.5" y="5" width="17" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="m4.5 17 4.8-4.6 3.2 3 2.4-2.3 4.6 4.4"/>',
     undo: '<path d="M9 6 5 10l4 4"/><path d="M5 10h9.5a4.5 4.5 0 0 1 0 9H11"/>',
     check: '<path d="m5.5 12.5 4 4 9-9"/>',
     plus: '<path d="M12 5v14M5 12h14"/>',
@@ -66,7 +108,16 @@
     down: '<path d="m5 8.5 7 7 7-7"/>',
     updown: '<path d="m7.5 9.5 4.5-4.5 4.5 4.5M7.5 14.5l4.5 4.5 4.5-4.5"/>',
     tv: '<rect x="3" y="4.5" width="18" height="12" rx="2"/><path d="M8.5 20h7"/>',
-    warn: '<path d="M12 4 2.8 19.5h18.4Z"/><path d="M12 10v4.5M12 17.3v.1"/>'
+    warn: '<path d="M12 4 2.8 19.5h18.4Z"/><path d="M12 10v4.5M12 17.3v.1"/>',
+    /* Weather glyphs share the utility grid. */
+    sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2.8v2M12 19.2v2M2.8 12h2M19.2 12h2M5.5 5.5l1.4 1.4M17.1 17.1l1.4 1.4M5.5 18.5l1.4-1.4M17.1 6.9l1.4-1.4"/>',
+    moon: '<path d="M19.5 14.6A8 8 0 0 1 9.4 4.5a8 8 0 1 0 10.1 10.1Z"/>',
+    partly: '<path d="M9.5 3.6v1.2M3.6 9.5h1.2M5.3 5.3l.9.9M13.7 5.3l-.9.9"/><path d="M6.6 11.8a3.4 3.4 0 0 1 5.8-3.3"/><path d="M9.2 19.5h8.3a3.5 3.5 0 0 0 .5-6.96 5 5 0 0 0-9.6 1A3 3 0 0 0 9.2 19.5Z"/>',
+    cloud: '<path d="M7 18.5h10a4 4 0 0 0 .6-7.96A6 6 0 0 0 6.2 11 3.75 3.75 0 0 0 7 18.5Z"/>',
+    fog: '<path d="M4 8.5h16M6 12.5h12M4 16.5h16"/>',
+    rain: '<path d="M7 14h10a4 4 0 0 0 .6-7.96A6 6 0 0 0 6.2 6.5 3.75 3.75 0 0 0 7 14Z"/><path d="M8.5 17l-1 2.6M12.5 17l-1 2.6M16.5 17l-1 2.6"/>',
+    snow: '<path d="M7 14h10a4 4 0 0 0 .6-7.96A6 6 0 0 0 6.2 6.5 3.75 3.75 0 0 0 7 14Z"/><path d="M8 18v.1M12 19.6v.1M16 18v.1"/>',
+    storm: '<path d="M7 14h10a4 4 0 0 0 .6-7.96A6 6 0 0 0 6.2 6.5 3.75 3.75 0 0 0 7 14Z"/><path d="m12.8 15.5-2.1 3h2.8l-2 3"/>'
   };
 
   /* ---------- State ---------- */
@@ -91,6 +142,12 @@
   /* ---------- Helpers ---------- */
   function app(id) { for (var i = 0; i < APPS.length; i++) if (APPS[i].id === id) return APPS[i]; return null; }
   function wall(id) { for (var i = 0; i < WALLS.length; i++) if (WALLS[i].id === id) return WALLS[i]; return null; }
+  /* File locations: bundled photos under assets/, own photos served by the Fire TV app. */
+  function ownBase(id) { var w = wall(id); return w && w.custom ? '/userwall/' + id + '/' : ''; }
+  function photoSrc(id) { return ownBase(id) ? ownBase(id) + 'photo.jpg' : WP + id + '.jpg'; }
+  function thumbSrc(id) { return ownBase(id) ? ownBase(id) + 'thumb.jpg' : WP + id + '-thumb.jpg'; }
+  function panelSrc(id) { return ownBase(id) ? ownBase(id) + 'panel.jpg' : WP + id + '-panel.jpg'; }
+  function wallName(w) { return !w ? '' : w.custom ? tr('My photo {n}', { n: w.number }) : tr(w.name); }
   function wallIndex(id) { for (var i = 0; i < WALLS.length; i++) if (WALLS[i].id === id) return i; return 0; }
   function frostClass(w) { var i = [.12, .20, .30, .36, .44].indexOf(w.frostVeil); return i > 0 ? ' fv-' + (i + 1) : ''; }
   function wallClasses(w) { return frostClass(w) + (w.listColumn ? ' lc-' + w.listColumn : '') + (w.dockQuiet ? ' db-quiet' : '') + (w.clockMist ? ' tl-mist' : ''); }
@@ -297,7 +354,7 @@
     for (k in map) if (map.hasOwnProperty(k) && !seen[k]) { if (map[k].parentNode === parent) parent.removeChild(map[k]); delete map[k]; }
   }
   function setContent(el, sig, renderContent) {
-    sig += '|' + catalog.revision + '|' + fontRevision;
+    sig += '|' + catalog.revision + '|' + fontRevision + '|' + langRevision;
     if (el._sig === sig) return;
     el.innerHTML = renderContent();
     el._sig = sig;
@@ -331,14 +388,14 @@
     var legacyList = s.theme === 'list', h = [], recent = [], records = Array.isArray(s.appRecords) ? s.appRecords : [];
     records.slice(0, 256).forEach(function (a) {
       if (!a || !safeId(a.id) || !safeId(a.appId) || typeof a.name !== 'string' || !a.name.trim() || app(a.id)) return;
-      APPS.push({ id: a.id, appId: a.appId, name: a.name.slice(0, 160), brand: ['hbomax', 'spotify', 'tubi'].indexOf(a.brand) >= 0 ? a.brand : '', mark: ['hbomax', 'spotify', 'tubi'].indexOf(a.brand) >= 0, icon: safeIcon(a.icon) });
+      APPS.push({ id: a.id, appId: a.appId, name: a.name.slice(0, 160), brand: MARK_BRANDS.indexOf(a.brand) >= 0 ? a.brand : '', mark: MARK_BRANDS.indexOf(a.brand) >= 0, icon: safeIcon(a.icon) });
     });
     (Array.isArray(s.home) ? s.home : Array.isArray(s.dock) ? s.dock : []).forEach(function (id) {
       if (!safeId(id) || h.indexOf(id) >= 0 || h.length >= CAP) return;
       if (!app(id) && id.indexOf('.') > 0) APPS.push({ id: id, appId: id, name: id.split('.').pop(), mark: false });
       if (app(id)) h.push(id);
     });
-    if (!h.length) h = PRIMARY.slice();
+    if (!h.length) h = PRIMARY.slice(0, CAP);
     (Array.isArray(s.recent) ? s.recent : []).forEach(function (id) { if (safeId(id) && app(id) && h.indexOf(id) < 0 && recent.indexOf(id) < 0 && recent.length < 5) recent.push(id); });
     return {
       bg: pick(modern.bg, LOOK_VALUES.bg, legacyList ? 'dark' : 'photo'), layout: pick(modern.layout, LOOK_VALUES.layout, legacyList ? 'list' : 'dock'),
@@ -346,9 +403,14 @@
       focus: pick(modern.focus, LOOK_VALUES.focus, legacyList ? 'type' : 'glass'), material: pick(modern.material, LOOK_VALUES.material, 'soft'),
       font: pick(modern.font, LOOK_VALUES.font, 'manrope'), wall: wall(modern.wall || s.wallpaper) ? modern.wall || s.wallpaper : WALLS[0].id,
       home: h, recent: recent, lastApp: h.indexOf(s.lastApp) >= 0 ? s.lastApp : h[0],
-      mode: pick(s.mode, MODES.map(function (m) { return m.id; }), 'fixed')
+      mode: pick(s.mode, MODES.map(function (m) { return m.id; }), 'fixed'),
+      lang: pick(s.lang, PREF_VALUES.lang, 'auto'),
+      clock: pick(s.clock, PREF_VALUES.clock, DEFAULTS.clock || (systemLanguage() === 'de' ? '24' : '12')),
+      date: pick(s.date, PREF_VALUES.date, DEFAULTS.date ? 'on' : 'off'),
+      place: pick(s.place, PREF_VALUES.place, DEFAULTS.weather && PLACES.length ? PLACES[0].id : 'off')
     };
   }
+  function prefsOf(c) { return { lang: c.lang, clock: c.clock, date: c.date, place: c.place }; }
   function serialise(c) {
     var out = {};
     Object.keys(c).forEach(function (key) { out[key] = c[key]; });
@@ -368,10 +430,16 @@
     if (saved && initial.mode === 'open') initial.wall = WALLS[(wallIndex(initial.wall) + 1) % WALLS.length].id;
     // Keep the old schema keys alongside the builder values for in-place updates.
     try { localStorage.setItem(KEY, JSON.stringify(serialise(initial))); S.c = initial; storageOk = true; } catch (e) { storageOk = false; }
+    resolveLanguage(S.c);
   }
   function clearSession() { S.undo = []; S.removedAt = {}; S.note = null; S.err = null; }
   function begin() { S.note = null; }
-  function next(home, recent) { var c = lookOf(S.c); c.home = home; c.recent = recent; c.lastApp = S.c.lastApp; c.mode = S.c.mode; return c; }
+  function next(home, recent) {
+    var c = lookOf(S.c), p = prefsOf(S.c);
+    c.home = home; c.recent = recent; c.lastApp = S.c.lastApp; c.mode = S.c.mode;
+    Object.keys(p).forEach(function (key) { c[key] = p[key]; });
+    return c;
+  }
   function snap() { return { home: S.c.home.slice(), recent: S.c.recent.slice() }; }
   function pushRecent(list, id) { return [id].concat(without(list, id)).slice(0, 5); }
   function write(c, label) {
@@ -379,14 +447,15 @@
     catch (e) { storageOk = false; S.failed++; S.err = label; log('Not saved: ' + label); return false; }
     if (c.wall !== S.c.wall || c.mode !== S.c.mode) resetRotation();
     storageOk = true; S.c = c; S.writes++; S.err = null; log('Saved: ' + label);
+    resolveLanguage(c);
     return true;
   }
   function errText(lifted) {
-    return 'Couldn’t save. Nothing changed.';
+    return tr('Couldn’t save. Nothing changed.');
   }
   function statusHtml(def, lifted) {
     if (S.err) return '<span class="warn error-chip">' + esc(errText(lifted)) + '</span>';
-    return esc(S.note || def);
+    return esc(tr(S.note || def || ''));
   }
 
   function ensureSel() {
@@ -407,7 +476,7 @@
     h = S.c.home.slice(); h.splice(i, 1);
     if (!write(next(h, pushRecent(S.c.recent, id)), 'Remove ' + a.name + ' from Home')) return false;
     S.removedAt[id] = i;
-    S.undo.push({ label: 'Remove ' + a.name, snap: before });
+    S.undo.push({ label: 'Remove ' + a.name, verb: 'Remove {name}', name: a.name, snap: before });
     return true;
   }
   function homeAdd(id) {
@@ -416,43 +485,51 @@
     at = S.removedAt.hasOwnProperty(id) ? Math.min(S.removedAt[id], h.length) : h.length;
     h.splice(at, 0, id);
     if (!write(next(h, without(S.c.recent, id)), 'Add ' + a.name + ' to Home')) return false;
-    S.undo.push({ label: 'Add ' + a.name, snap: before });
+    S.undo.push({ label: 'Add ' + a.name, verb: 'Add {name}', name: a.name, snap: before });
     return true;
   }
   function homeMove(order, id, before) {
     var a = app(id);
     if (!write(next(order, S.c.recent.slice()), 'Move ' + a.name)) return false;
-    S.undo.push({ label: 'Move ' + a.name, snap: before });
+    S.undo.push({ label: 'Move ' + a.name, verb: 'Move {name}', name: a.name, snap: before });
     return true;
   }
+  /* Undo labels stay English in state for checks; the interface shows the translated phrase. */
+  function undoText(u) { return u.verb ? tr(u.verb, { name: u.name }) : u.label; }
   function undoLast(arr) {
     var u = S.undo[S.undo.length - 1];
-    if (!u) { S.note = 'Nothing to undo'; return false; }
+    if (!u) { S.note = tr('Nothing to undo'); return false; }
     if (!write(next(u.snap.home.slice(), u.snap.recent.slice()), 'Undo ' + u.label)) return false;
     S.undo.pop();
-    S.note = 'Undone: ' + u.label + '.';
+    S.note = tr('Undone: {label}.', { label: undoText(u) });
     return true;
   }
-  function undoLabel() { var u = S.undo[S.undo.length - 1]; return u ? u.label : ''; }
-  function undoCaption() { var label = undoLabel(); return label ? 'Undo ' + label.charAt(0).toLowerCase() + label.slice(1) : 'Nothing to undo'; }
+  function undoCaption() {
+    var u = S.undo[S.undo.length - 1], text;
+    if (!u) return tr('Nothing to undo');
+    text = undoText(u);
+    return tr('Undo {label}', { label: LANG === 'en' ? text.charAt(0).toLowerCase() + text.slice(1) : text });
+  }
   function editStatus(hint, move) {
     if (S.err) return statusHtml('', !!move);
-    if (S.note === FULL || S.note === LAST) return '<span class="warn">' + esc(S.note) + '</span>';
-    if (hint === FULL || hint === LAST) return '<span class="warn">' + esc(hint) + '</span>';
+    if (S.note === FULL || S.note === LAST) return '<span class="warn">' + esc(tr(S.note)) + '</span>';
+    if (hint === FULL || hint === LAST) return '<span class="warn">' + esc(tr(hint)) + '</span>';
     return esc(move || hint || S.note || '');
   }
 
   var busy = false, busyTimer = 0;
   function release() { busy = false; clearTimeout(busyTimer); S.press = null; }
-  function message(title, line, note) {
-    push({ id: 'message', msg: 'error', content: { title: title, line: line, note: note || '', actions: [['back', 'Back']] }, f: { b: 0 } });
+  /* A device error can offer one next step (for example opening the Appstore) before Back. */
+  function message(title, line, note, action) {
+    var actions = action ? [[action[0], tr(action[1])], ['back', tr('Back')]] : [['back', tr('Back')]];
+    push({ id: 'message', msg: 'error', content: { title: title, line: line, note: note || '', actions: actions }, f: { b: 0 } });
   }
   function perform(title, run) {
     if (busy) return;
     busy = true; busyTimer = setTimeout(release, 10000);
     run(function (err) {
       release();
-      if (err) message(title, err.message || 'The TV could not open this screen.', err.detail || '');
+      if (err) message(tr(title), tr(err.message || 'The TV could not open this screen.'), tr(err.detail || ''), err.action);
       render(); syncRotation();
     });
   }
@@ -478,7 +555,7 @@
         if (!safeId(id) || !safeId(entry.appId) || ALPHA.indexOf(id) >= 0) return;
         a = app(id);
         if (!a) { a = { id: id }; APPS.push(a); }
-        a.appId = entry.appId; a.brand = entry.brand || ''; a.mark = !!entry.brand;
+        a.appId = entry.appId; a.brand = entry.brand || ''; a.mark = entry.mark !== undefined ? !!entry.mark : !!entry.brand;
         a.icon = safeIcon(entry.icon);
         a.name = PRIMARY.indexOf(id) >= 0 ? PRIMARY_APPS[PRIMARY.indexOf(id)].name : String(entry.name).slice(0, 160);
         ALPHA.push(id);
@@ -491,7 +568,12 @@
   }
 
   /* ---------- Navigation targets ---------- */
-  function utils() { return ['art', 'apps', 'settings']; }
+  function utils() {
+    var list = FEATURES.art === false ? ['apps'] : ['art', 'apps'];
+    if (FEATURES.smarthome) list.push('smarthome');
+    if (FEATURES.airplay) list.push('airplay');
+    return list.concat('settings');
+  }
   /* prev/next run along the apps; out goes to the controls, inn comes back (or to a per-app action). */
   function axes() {
     var v = S.c.layout === 'list';
@@ -499,17 +581,20 @@
   }
   function utilAction(u) {
     if (u === 'art') perform('Art Mode', FrameDevice.art);
+    else if (u === 'smarthome') perform('Smart Home', FrameDevice.smartHome);
+    else if (u === 'airplay') openAirPlay();
     else if (u === 'apps') openApps();
     else openSettings();
   }
   function addAppsRoute() { openEditor('home'); }
   function openSettings() { push({ id: 'settings', f: { id: S.settingsFocus } }); }
   function openAppearance(group) {
-    var axis = { background: 'bg', layout: 'layout', typography: 'font', focus: 'focus' }[group];
-    var action = S.detailFocus[group] || (axis ? 'choice.' + axis + '.' + S.c[axis] : group === 'rotation' ? 'rotation.' + S.c.mode : 'samsung.home');
+    var axis = GROUP_AXIS[group];
+    var action = S.detailFocus[group] || (axis === 'mode' ? 'rotation.' + S.c.mode : axis ? 'choice.' + axis + '.' + S.c[axis] : 'samsung.home');
     push({ id: 'appearance', group: group, f: { action: action } });
   }
   function openMessage(key) { push({ id: 'message', msg: key, f: { b: 0 } }); }
+  function openAirPlay() { airplayRead(); openAppearance('airplay'); }
   function openApps() {
     var e = { id: 'apps', mode: 'browse', top: 0, f: { zone: 'grid', i: Math.max(0, ALPHA.indexOf(S.appsFocus)), h: 0 } };
     push(e); refreshCatalog(); return e;
@@ -682,7 +767,7 @@
 
   /* ---------- Installed apps ---------- */
   function appsItems() { return catalog.error ? [] : ALPHA; }
-  function appsHead() { return catalog.error ? [['retry', 'Try again', '', '']] : [['editor', 'Apps on Home', '', 'home']]; }
+  function appsHead() { return catalog.error ? [['retry', tr('Try again'), '', '']] : [['editor', tr('Apps on Home'), '', 'home']]; }
   V.apps = {
     sheet: true,
     norm: function (t) {
@@ -792,7 +877,7 @@
   function editorRemove(t, id) {
     if (!homeRemove(id)) return;
     t.f.zone = 'other'; t.f.j = otherList().indexOf(id);
-    S.note = app(id).name + ' is in Recently removed. OK puts it back.';
+    S.note = tr('{name} is in Recently removed. OK puts it back.', { name: app(id).name });
   }
   function editorAdd(t, id) {
     rememberOther(t);
@@ -800,7 +885,7 @@
     var remaining = otherList(), at = clamp(t.otherReturn.index, 0, Math.max(0, remaining.length - 1));
     t.otherReturn.id = remaining[at] || null; t.otherReturn.index = at;
     t.f.zone = 'home'; t.f.i = S.c.home.indexOf(id); t.f.part = 'remove';
-    S.note = app(id).name + ' is on Home, position ' + (t.f.i + 1) + '.';
+    S.note = tr('{name} is on Home, position {n}.', { name: app(id).name, n: t.f.i + 1 });
   }
   function editorPlace(t) {
     var L = t.lifted;
@@ -808,20 +893,26 @@
     if (same(L.order, S.c.home)) { t.lifted = null; return; }
     if (!homeMove(L.order.slice(), L.id, L.snap)) return;
     t.lifted = null;
-    S.note = app(L.id).name + ' moved to position ' + (t.f.i + 1) + '.';
+    S.note = tr('{name} moved to position {n}.', { name: app(L.id).name, n: t.f.i + 1 });
   }
   function closeEditor() { clearSession(); pop(); }
 
   /* ---------- Settings, Layout and messages ---------- */
   function mode() { for (var i = 0; i < MODES.length; i++) if (MODES[i].id === S.c.mode) return MODES[i]; return MODES[0]; }
+  function place(id) { for (var i = 0; i < PLACES.length; i++) if (PLACES[i].id === id) return PLACES[i]; return null; }
+  function infoSummary() {
+    var p = place(S.c.place);
+    return [tr(PREF_NAMES[S.c.clock]), p ? p.name : tr('Weather') + ' ' + tr('Off').toLowerCase(), tr(LANG === 'de' ? 'Deutsch' : 'English')].join(' · ');
+  }
   function settingsRows() {
     var n = S.c.home.length;
-    return [{ id: 'background', label: 'Background', value: S.c.bg === 'photo' ? wall(S.c.wall).name : VALUE_NAMES[S.c.bg] },
-      { id: 'layout', label: 'Layout', value: VALUE_NAMES[S.c.layout] },
-      { id: 'typography', label: 'Typography', value: FONTS[S.c.font].name },
-      { id: 'focus', label: 'Focus', value: VALUE_NAMES[S.c.focus] + (materialApplies() ? ', ' + VALUE_NAMES[S.c.material] : '') },
-      { id: 'editor', label: 'Apps on Home', value: n + (n === 1 ? ' app' : ' apps') },
-      { id: 'samsung', label: 'Samsung', value: 'Home and TV settings' }];
+    return [{ id: 'background', label: tr('Background'), value: S.c.bg === 'photo' ? wallName(wall(S.c.wall)) : tr(VALUE_NAMES[S.c.bg]) },
+      { id: 'layout', label: tr('Layout'), value: tr(VALUE_NAMES[S.c.layout]) },
+      { id: 'typography', label: tr('Typography'), value: FONTS[S.c.font].name },
+      { id: 'focus', label: tr('Focus'), value: tr(VALUE_NAMES[S.c.focus]) + (materialApplies() ? ', ' + tr(VALUE_NAMES[S.c.material]) : '') },
+      { id: 'info', label: tr('Clock, weather & language'), value: infoSummary() },
+      { id: 'editor', label: tr('Apps on Home'), value: tr(n === 1 ? '{n} app' : '{n} apps', { n: n }) },
+      { id: 'samsung', label: tr(SYSTEM.name), value: tr(SYSTEM.value) }];
   }
   function settingsIds() { return settingsRows().map(function (r) { return r.id; }); }
   V.settings = {
@@ -841,45 +932,77 @@
     if (id === 'editor') openEditor('settings');
     else openAppearance(id);
   }
-  var DETAIL_NAMES = { background: 'Background', layout: 'Layout', typography: 'Typography', focus: 'Focus', rotation: 'Rotation', samsung: 'Samsung' };
+  var DETAIL_NAMES = { background: 'Background', layout: 'Layout', typography: 'Typography', focus: 'Focus', rotation: 'Rotation', samsung: SYSTEM.name, info: 'Clock, weather & language', weather: 'Weather place', photos: 'Own photos', airplay: 'AirPlay', airplayname: 'Name on the iPhone' };
+  var GROUP_AXIS = { background: 'bg', layout: 'layout', typography: 'font', focus: 'focus', rotation: 'mode', info: 'lang', weather: 'place' };
+  /* Nested groups return to their parent; the rest return to the Settings overview. */
+  var GROUP_PARENT = { rotation: 'background', weather: 'info', photos: 'background', airplayname: 'airplay' };
+  /* AirPlay opens from Home, so its Back returns there. */
+  function parentName(group) { return tr(GROUP_PARENT[group] ? DETAIL_NAMES[GROUP_PARENT[group]] : group === 'airplay' ? 'Back' : 'Settings'); }
+  function choiceLabel(axis, value) {
+    if (axis === 'font') return FONTS[value].name;
+    if (axis === 'mode') return tr(MODES.filter(function (m) { return m.id === value; })[0].name);
+    if (axis === 'place') return value === 'off' ? tr('Off') : place(value).name;
+    if (axis === 'date') return tr(value === 'on' ? 'Show' : 'Hide');
+    if (PREF_VALUES[axis]) return tr(PREF_NAMES[value]);
+    return tr(value === 'both' ? 'Both' : VALUE_NAMES[value]);
+  }
   function choice(axis, value, disabled) {
-    return { action: axis === 'mode' ? 'rotation.' + value : 'choice.' + axis + '.' + value, axis: axis, value: value, disabled: !!disabled,
-      label: axis === 'font' ? FONTS[value].name : axis === 'mode' ? MODES.filter(function (m) { return m.id === value; })[0].name : value === 'both' ? 'Both' : VALUE_NAMES[value] };
+    return { action: axis === 'mode' ? 'rotation.' + value : 'choice.' + axis + '.' + value, axis: axis, value: value, disabled: !!disabled, label: choiceLabel(axis, value) };
   }
   function detailSections(t) {
-    var flat = S.c.bg !== 'photo', inactive = !materialApplies();
+    var flat = S.c.bg !== 'photo', inactive = !materialApplies(), p;
     function options(axis, values, disabled) { return values.map(function (value) { return choice(axis, value, disabled); }); }
     if (t.group === 'background') return [
-      { id: 'bg', title: 'Background type', items: options('bg', ['photo', 'light', 'dark']) },
-      { id: 'wall', title: 'Wallpaper', items: [{ action: 'background.wallpaper', label: wall(S.c.wall).name, thumbnail: true, disabled: flat }] },
-      { id: 'rotation', title: 'Rotation', items: [{ action: 'background.rotation', label: mode().name, disabled: flat }], reason: flat ? 'Choose Photo to use wallpaper and rotation.' : '' }
+      { id: 'bg', title: tr('Background type'), items: options('bg', ['photo', 'light', 'dark']) },
+      { id: 'wall', title: tr('Wallpaper'), items: [{ action: 'background.wallpaper', label: wallName(wall(S.c.wall)), thumbnail: true, thumbSrc: thumbSrc(S.c.wall), disabled: flat }]
+        .concat(FEATURES.photos ? [{ action: 'background.photos', label: tr('Own photos'), icon: 'photo' }] : []) },
+      { id: 'rotation', title: tr('Rotation'), items: [{ action: 'background.rotation', label: tr(mode().name), disabled: flat }], reason: flat ? tr('Choose Photo to use wallpaper and rotation.') : '' }
     ];
     if (t.group === 'layout') return [
-      { id: 'layout', title: 'Layout', horizontal: true, items: options('layout', ['list', 'dock']) },
-      { id: 'apps', title: 'App display', horizontal: true, items: options('apps', ['text', 'icons', 'both']) },
-      { id: 'controls', title: 'Home controls', horizontal: true, items: options('controls', ['text', 'icons', 'both']) }
+      { id: 'layout', title: tr('Layout'), horizontal: true, items: options('layout', ['list', 'dock']) },
+      { id: 'apps', title: tr('App display'), horizontal: true, items: options('apps', ['text', 'icons', 'both']) },
+      { id: 'controls', title: tr('Home controls'), horizontal: true, items: options('controls', ['text', 'icons', 'both']) }
     ];
     if (t.group === 'typography') return [{ id: 'font', title: '', items: options('font', LOOK_VALUES.font) }];
     if (t.group === 'focus') return [
-      { id: 'focus', title: 'Focus style', horizontal: true, items: options('focus', ['type', 'glass']) },
-      { id: 'material', title: 'Material', horizontal: true, items: options('material', ['soft', 'frost', 'tint'], inactive),
-        reason: inactive ? flat ? 'Materials are available with a Photo background.' : 'Choose Glass focus or the Dock layout to use materials.' : '' }
+      { id: 'focus', title: tr('Focus style'), horizontal: true, items: options('focus', ['type', 'glass']) },
+      { id: 'material', title: tr('Material'), horizontal: true, items: options('material', ['soft', 'frost', 'tint'], inactive),
+        reason: inactive ? flat ? tr('Materials are available with a Photo background.') : tr('Choose Glass focus or the Dock layout to use materials.') : '' }
     ];
     if (t.group === 'rotation') return [{ id: 'mode', title: '', items: options('mode', MODES.map(function (m) { return m.id; }), flat),
-      reason: flat ? 'Choose Photo in Background to use rotation.' : 'Timed changes pause while Settings or another panel is open.' }];
+      reason: flat ? tr('Choose Photo in Background to use rotation.') : tr('Timed changes pause while Settings or another panel is open.') }];
+    if (t.group === 'info') {
+      p = place(S.c.place);
+      return [
+        // Automatic (the stored default) follows the system; choosing a language fixes it.
+        { id: 'lang', title: tr('Language'), horizontal: true, items: options('lang', ['de', 'en']) },
+        { id: 'clock', title: tr('Time format'), horizontal: true, items: options('clock', PREF_VALUES.clock) },
+        { id: 'date', title: tr('Date'), horizontal: true, items: options('date', PREF_VALUES.date) },
+        { id: 'weather', title: tr('Weather'), items: [{ action: 'info.weather', label: p ? p.name : tr('Off') }] }
+      ];
+    }
+    if (t.group === 'weather') return [{ id: 'place', title: '', items: options('place', PREF_VALUES.place), reason: tr('Weather data: Open-Meteo.com') }];
+    if (t.group === 'photos') {
+      p = WALLS.filter(function (w) { return w.custom; });
+      return [{ id: 'photos', title: p.length ? tr('On this TV · {a} of {b}', { a: p.length, b: PHOTO_LIMIT }) : '',
+        items: p.map(function (w) { return { action: 'photos.item.' + w.id, label: wallName(w), thumbnail: true, thumbSrc: thumbSrc(w.id), wallId: w.id }; }),
+        reason: p.length ? '' : tr('No photos of your own yet. Scan the code with your phone to add some.') }];
+    }
+    if (t.group === 'airplay') return airplaySections();
+    if (t.group === 'airplayname') return airplayNameSections();
     return [{ id: 'samsung', title: '', items: [
-      { action: 'samsung.home', label: 'Samsung Home', description: 'Open Samsung’s Home screen' },
-      { action: 'samsung.settings', label: 'TV settings', description: 'Picture, sound and network settings' }
+      { action: 'samsung.home', label: tr(SYSTEM.home), description: tr(SYSTEM.homeDescription) },
+      { action: 'samsung.settings', label: tr(SYSTEM.settings), description: tr(SYSTEM.settingsDescription) }
     ] }];
   }
   function detailRows(t) {
-    var rows = [[{ action: 'settings.back', label: t.group === 'rotation' ? 'Background' : 'Settings' }]];
+    var rows = [[{ action: 'settings.back', label: parentName(t.group) }]];
     detailSections(t).forEach(function (section) {
       var enabled = section.items.filter(function (item) { return !item.disabled; });
       if (section.horizontal && enabled.length) rows.push(enabled);
       else enabled.forEach(function (item) { rows.push([item]); });
     });
-    if (S.lookError) rows.push([{ action: 'settings.retry', label: 'Try again' }]);
+    if (S.lookError) rows.push([{ action: 'settings.retry', label: tr('Try again') }]);
     return rows;
   }
   function detailLocation(t) {
@@ -901,29 +1024,45 @@
     c = next(S.c.home.slice(), S.c.recent.slice()); c.mode = value;
     if (!write(c, 'Wallpaper rotation')) S.lookError = { type: 'save', patch: { mode: value }, row: 'mode', transient: false };
   }
+  /* Language, clock, date and weather are saved directly; they need no image or font bundle. */
+  function applyPref(axis, value) {
+    var c, patch = {};
+    S.err = null; S.lookError = null;
+    if (!PREF_VALUES[axis] || PREF_VALUES[axis].indexOf(value) < 0 || value === S.c[axis]) return;
+    c = next(S.c.home.slice(), S.c.recent.slice()); c[axis] = value; patch[axis] = value;
+    if (!write(c, 'Preference ' + axis)) { S.lookError = { type: 'save', patch: patch, row: axis, transient: false }; return; }
+    if (axis === 'place') refreshWeather(true);
+  }
   function detailBack() { cancelLook(); S.err = null; pop(); }
   function detailOk(t, item) {
     var patch = {}, error = S.lookError;
     if (item.action === 'settings.back') { detailBack(); return; }
     if (item.disabled || S.pending) return;
+    if (item.airplay) { airplayOk(item); return; }
     if (item.action === 'settings.retry') {
       if (error && error.patch[error.row] !== undefined) detailFocus(t, choice(error.row, error.patch[error.row]), 0);
       if (error && error.row === 'mode') applyRotation(error.patch.mode);
+      else if (error && PREF_VALUES[error.row]) applyPref(error.row, error.patch[error.row]);
       else if (error) setLook(error.patch, { row: error.row });
     } else if (item.axis === 'mode') applyRotation(item.value);
+    else if (item.axis && PREF_VALUES[item.axis]) applyPref(item.axis, item.value);
     else if (item.axis) { patch[item.axis] = item.value; setLook(patch, { row: item.axis }); }
     else if (item.action === 'background.wallpaper') openWallpaper();
     else if (item.action === 'background.rotation') openAppearance('rotation');
-    else if (item.action === 'samsung.home') perform('Samsung Home', FrameDevice.home);
-    else if (item.action === 'samsung.settings') perform('TV settings', FrameDevice.settings);
+    else if (item.action === 'info.weather') openAppearance('weather');
+    else if (item.action === 'background.photos') openAppearance('photos');
+    else if (item.wallId) openPhotoMenu(item.wallId);
+    else if (item.action === 'samsung.home') perform(SYSTEM.home, FrameDevice.home);
+    else if (item.action === 'samsung.settings') perform(SYSTEM.settings, FrameDevice.settings);
   }
   V.appearance = {
     norm: function (t) {
       var rows = detailRows(t), exists = false, applied = null;
-      var axis = { background: 'bg', layout: 'layout', typography: 'font', focus: 'focus', rotation: 'mode' }[t.group];
+      var axis = GROUP_AXIS[t.group], byCheck = t.group === 'airplay' || t.group === 'airplayname';
       rows.forEach(function (items) { items.forEach(function (item) {
         if (item.action === t.f.action) exists = true;
-        if (item.axis === axis && item.value === S.c[axis]) applied = item;
+        if (byCheck) { if (item.checked === true && !applied) applied = item; }
+        else if (item.axis === axis && item.value === S.c[axis]) applied = item;
       }); });
       if (!exists) detailFocus(t, applied || (rows[1] || rows[0])[0], 0);
       if (t.f.column === undefined) t.f.column = detailLocation(t).column;
@@ -949,7 +1088,7 @@
       }); });
     }
   };
-  function messageContent(t) { return t.content || MSG[t.msg]; }
+  function messageContent(t) { return t.content || MSG[t.msg](); }
   V.message = {
     sheet: true,
     key: function (t, k) {
@@ -957,7 +1096,12 @@
       if (k === 'left') t.f.b = Math.max(0, t.f.b - 1);
       else if (k === 'right') t.f.b = Math.min(A.length - 1, t.f.b + 1);
       else if (k === 'back') pop();
-      else if (k === 'ok') { a = A[t.f.b][0]; pop(); if (a === 'samsung') perform('Samsung Home', FrameDevice.home); }
+      else if (k === 'ok') {
+        a = A[t.f.b][0]; pop();
+        if (a === 'samsung') perform(SYSTEM.home, FrameDevice.home);
+        else if (a === 'use' && wall(t.wallId)) { S.err = null; setLook({ bg: 'photo', wall: t.wallId }, { row: 'bg' }); }
+        else if (a === 'remove') removeOwnPhoto(t.wallId);
+      }
     },
     point: function (t, z, i) { if (z === 'act') { t.f.b = i; this.key(t, 'ok'); } }
   };
@@ -1016,7 +1160,8 @@
     }).join('');
   }
   function render() {
-    var t = top(), sheet = !!V[t.id].sheet, shown = wall(S.shown ? S.shown.wall : S.c.wall), palette = ADAPTIVE_INK[shown.id];
+    syncPhotoLink();
+    var t = top(), sheet = !!V[t.id].sheet, shown = wall(S.shown ? S.shown.wall : S.c.wall) || wall(S.c.wall) || WALLS[0], palette = ADAPTIVE_INK[shown.id];
     var adaptive = applyAdaptiveInk(palette), tr = adaptive && palette.tr ? palette.tr.pol : shown.ut.tr, br = adaptive && palette.br ? palette.br.pol : shown.ut.br;
     stage.className = 'stage bg-' + S.c.bg + ' l-' + S.c.layout + ' v-' + S.variant + ' m-' + (materialApplies() ? S.c.material : 'none') + ' f-' + S.c.focus + ' a-' + S.c.apps + ' u-' + S.c.controls + ' g-' + S.geom + ' tone-' + shown.tone + ' tr-' + tr + ' br-' + br + wallClasses(shown) + inkRungClasses(palette, adaptive) + ' at-' + t.id + ' font-' + homeFont() + (homeFont() !== 'manrope' ? ' font-custom' : '') + (S.fontSwitch ? ' is-font-switch' : '') + (adaptive ? ' has-adaptive-ink adaptive-tl-' + palette.tl.pol : '') + (!adaptive && shown.clockInk ? ' has-clock-ink' : '') + (!adaptive && shown.dockClockInk ? ' has-dock-clock-ink' : '') + (registeredMaterial(shown.id) ? ' registered-material' : '') + (sheet ? ' is-sheet' : '') + (S.reflow ? ' is-reflow' : '');
     if (!adaptive && shown.clockInk) stage.style.setProperty('--clock-ink', shown.clockInk);
@@ -1056,7 +1201,7 @@
   }
 
   function clockText() {
-    var d = new Date(), h = d.getHours() % 12 || 12, m = d.getMinutes();
+    var d = new Date(), h = S.c.clock === '24' ? d.getHours() : d.getHours() % 12 || 12, m = d.getMinutes();
     return h + ':' + (m < 10 ? '0' : '') + m;
   }
   function clockHtml() {
@@ -1064,8 +1209,20 @@
     if (!metrics || !metrics.digitCell) return text;
     return text.replace(/[0-9]/g, function (digit) { return '<span class="clock-digit">' + digit + '</span>'; });
   }
+  function dateText() {
+    var d = new Date(), cal = CALENDAR[LANG] || CALENDAR.en;
+    if (!cal) return '';
+    return cal.format.replace('{day}', cal.days[d.getDay()]).replace('{date}', String(d.getDate())).replace('{month}', cal.months[d.getMonth()]);
+  }
+  /* Date and weather share one quiet line under the clock. */
+  function infoLineHtml() {
+    var parts = [], w = weatherNow();
+    if (S.c.date === 'on') parts.push('<span class="cap-date">' + esc(dateText()) + '</span>');
+    if (w) parts.push('<span class="cap-weather">' + icon(w.icon, 'cap-weather-ico') + '<span class="cap-temp">' + esc(w.temp) + '</span><span class="cap-cond">' + esc(tr(w.text)) + '</span></span>');
+    return parts.length ? '<span class="cap-line cap-info">' + parts.join('<span class="cap-sep" aria-hidden="true">·</span>') + '</span>' : '';
+  }
   function renderCaption(t, hs) {
-    var html = '<span class="clock">' + clockHtml() + '</span>';
+    var html = '<span class="clock">' + clockHtml() + '</span>' + infoLineHtml();
     if (S.c.apps !== 'icons' && hs.items[hs.i] && (S.c.layout === 'list' ? photoLabel(hs.items[hs.i].id, false).size < 88 || photoLabel(hs.items[hs.i].id, false).ellipsis : hs.zone === 'apps' && reducedDockLabel(hs.items[hs.i].id))) html += '<span class="cap-line full-name">' + esc(app(hs.items[hs.i].id).name) + '</span>';
     setHTML(caption, html);
   }
@@ -1077,7 +1234,7 @@
     var html = '', style = hs.mode === 'arrange' && S.c.controls !== 'text' ? 'both' : S.c.controls;
     var iconsOnly = style === 'icons', U = utils(), focused = null;
     utilsEl.className = 'utils quiet-utils is-' + style + (hs.zone === 'util' || hs.zone === 'ctl' ? ' is-awake' : '');
-    U.forEach(function (u, i) { html += utilBtn('util', i, 'util.' + u, icon(UTIL[u][1], '', true) + '<span class="u-label">' + UTIL[u][0] + '</span>', '', UTIL[u][0]); });
+    U.forEach(function (u, i) { html += utilBtn('util', i, 'util.' + u, icon(UTIL[u][1], '', true) + '<span class="u-label">' + esc(tr(UTIL[u][0])) + '</span>', '', tr(UTIL[u][0])); });
     setHTML(utilsEl, html);
     Array.prototype.forEach.call(utilsEl.querySelectorAll('.u'), function (b) {
       var z = b.getAttribute('data-z'), focus = hs.zone === z && hs.u === Number(b.getAttribute('data-i'));
@@ -1090,7 +1247,7 @@
   function renderUtilFocusLabel(button) {
     var text, key, r, sr, scale, width, x;
     if (!button) { utilFocusLabel.className = 'util-focus-label'; utilFocusKey = ''; return; }
-    text = S.err ? 'Not saved. OK tries again.' : button.getAttribute('aria-label');
+    text = S.err ? tr('Not saved. OK tries again.') : button.getAttribute('aria-label');
     key = button.getAttribute('data-action') + '|' + text + '|' + homeFont();
     if (key !== utilFocusKey) {
       utilFocusLabel.className = 'util-focus-label'; utilFocusLabel.textContent = text;
@@ -1177,7 +1334,7 @@
   }
   function dockTileHtml(it, full) {
     var a, body;
-    if (it.kind === 'add') return '<span class="add">' + icon('plus') + '</span><span class="label">' + (full ? 'Home is full' : 'Add app') + '</span>';
+    if (it.kind === 'add') return '<span class="add">' + icon('plus') + '</span><span class="label">' + esc(tr(full ? 'Home is full' : 'Add app')) + '</span>';
     a = app(it.id);
     body = S.c.apps === 'text' ? '' : appMark(a, S.c.apps === 'icons' ? 136 : 120, S.c.apps === 'icons' ? 88 : 72, S.c.apps === 'icons' ? 72 : 58);
     return body + (S.c.apps === 'icons' ? '' : '<span class="label" style="font-size:' + dockLabelSize(a.id) + 'px;top:' + ((S.c.apps === 'text' ? 28 : 128) + fontShift('primary', dockLabelSize(a.id))) + 'px"><span class="label-ink">' + esc(a.name) + '</span></span>') + '<span class="nudge nudge-l">' + icon('left') + '</span><span class="nudge nudge-r">' + icon('right') + '</span>';
@@ -1250,7 +1407,7 @@
     ax = g.x + 16 + anchor * g.pitch - off;
     if (hs.mode === 'arrange' && !hs.lifted && (hs.zone === 'tiles' || hs.zone === 'act') && focusItem && focusItem.kind !== 'add') {
       s = hs.arr.slots[anchor];
-      label = (s.removed ? 'Restore ' : 'Remove ') + app(s.id).name; width = actionWidth(label);
+      label = tr(s.removed ? 'Restore {name}' : 'Remove {name}', { name: app(s.id).name }); width = actionWidth(label);
       ax = clamp(ax + (g.tw - width) / 2, 112, 1808 - width);
       setHTML(dockAction, '<span>' + esc(label) + '</span>');
       dockAction.className = 'dock-action is-on' + (hs.zone === 'act' ? ' is-focus' : '');
@@ -1261,7 +1418,7 @@
       dockAction.className = 'dock-action';
       dockAction.removeAttribute('data-z'); dockAction.removeAttribute('data-action');
     }
-    setHTML(dockEmpty, empty ? '<p>No apps on Home</p><button type="button" tabindex="-1" class="btn' + (hs.zone === 'empty' ? ' is-focus' : '') + '" data-z="empty" data-i="0" data-action="home.add-apps">' + icon('plus') + '<span>Add apps</span></button>' : '');
+    setHTML(dockEmpty, empty ? '<p>' + esc(tr('No apps on Home')) + '</p><button type="button" tabindex="-1" class="btn' + (hs.zone === 'empty' ? ' is-focus' : '') + '" data-z="empty" data-i="0" data-action="home.add-apps">' + icon('plus') + '<span>' + esc(tr('Add apps')) + '</span></button>' : '');
   }
 
   function photoModeTransition(compact) {
@@ -1348,7 +1505,7 @@
     plateState = !n || hs.zone === null ? '' : hs.lifted ? 'on-lift' : S.c.focus === 'glass' && rowFocus ? 'on-focus' : S.c.focus === 'glass' && remembered ? 'on-sel' : '';
     renderPhotoPlate(items[anchor] ? items[anchor].id : '', width, compact ? 88 : 134, y, plateState);
     if (compact && !hs.lifted && (hs.zone === 'tiles' || hs.zone === 'act') && items[anchor]) {
-      s = hs.arr.slots[anchor]; label = (s.removed ? 'Restore ' : 'Remove ') + app(s.id).name; aw = actionWidth(label);
+      s = hs.arr.slots[anchor]; label = tr(s.removed ? 'Restore {name}' : 'Remove {name}', { name: app(s.id).name }); aw = actionWidth(label);
       setHTML(phAction, '<span>' + esc(label) + '</span>');
       phAction.className = 'ph-action is-on' + (hs.zone === 'act' ? ' is-focus' : '');
       phAction.style.width = aw + 'px';
@@ -1356,7 +1513,7 @@
       attrs(phAction, 'act', anchor, 'arrange.' + (s.removed ? 'restore.' : 'remove.') + s.id);
     } else { phAction.className = 'ph-action'; phAction.removeAttribute('data-z'); phAction.removeAttribute('data-action'); }
     phEmpty.className = 'ph-empty' + (!compact && !n ? ' is-on' : '');
-    setHTML(phEmpty, !compact && !n ? '<p>No apps on Home</p><button type="button" tabindex="-1" class="btn' + (hs.zone === 'empty' ? ' is-focus' : '') + '" data-z="empty" data-i="0" data-action="home.add-apps">' + icon('plus') + '<span>Add apps</span></button>' : '');
+    setHTML(phEmpty, !compact && !n ? '<p>' + esc(tr('No apps on Home')) + '</p><button type="button" tabindex="-1" class="btn' + (hs.zone === 'empty' ? ' is-focus' : '') + '" data-z="empty" data-i="0" data-action="home.add-apps">' + icon('plus') + '<span>' + esc(tr('Add apps')) + '</span></button>' : '');
   }
 
   /* Sheets: a frame is built once per view/mode; fill() updates its slots. Persistent
@@ -1369,7 +1526,7 @@
     else sheetView.removeAttribute('aria-modal');
     sceneEl.setAttribute('aria-hidden', sheet || isSettingsDetail(t) ? 'true' : 'false');
     if (!sheet) { sheetView.innerHTML = ''; sheetKey = ''; return; }
-    key = t.id + '|' + (t.mode || '') + '|' + (t.msg || '') + '|' + S.variant + '|' + S.c.bg;
+    key = t.id + '|' + (t.mode || '') + '|' + (t.msg || '') + '|' + S.variant + '|' + S.c.bg + '|' + LANG;
     if (key !== sheetKey) {
       sheetView.innerHTML = FRAMES[t.id](t);
       sheetKey = key; slotEls = {};
@@ -1385,56 +1542,60 @@
     V.appearance.norm(t);
     appearanceEl.className = 'appearance detail-' + t.group;
     appearanceRows.className = 'appearance-rows';
-    appearanceTitle.textContent = DETAIL_NAMES[t.group];
+    appearanceTitle.textContent = tr(DETAIL_NAMES[t.group]);
     var at = detailLocation(t), selected = at.item, error = S.lookError, status = '', hint;
     function command(item, inner, cls) {
-      var applied = item.axis && S.c[item.axis] === item.value;
+      var radio = !!item.axis || item.checked !== undefined;
+      var applied = item.checked !== undefined ? !!item.checked : item.axis && (item.axis === 'lang' ? LANG === item.value : S.c[item.axis] === item.value);
       var loading = !!(item.axis && S.pending && S.pending.target[item.axis] === item.value && S.pending.row === item.axis);
       return '<button type="button" tabindex="-1" class="setting-choice' + (cls ? ' ' + cls : '') + (t.f.action === item.action ? ' is-focus' : '') + (item.disabled ? ' is-disabled' : '') + (applied ? ' is-applied' : '') + (loading ? ' is-loading' : '') + '"'
-        + (item.axis ? ' role="radio" aria-checked="' + !!applied + '"' : '') + ' aria-label="' + esc(item.axis && item.value === 'both' ? 'Icons and text' : item.label) + '" aria-disabled="' + !!item.disabled + '" aria-busy="' + loading + '"'
+        + (radio ? ' role="radio" aria-checked="' + !!applied + '"' : '') + ' aria-label="' + esc(item.axis && item.value === 'both' ? tr('Icons and text') : item.label) + '" aria-disabled="' + !!item.disabled + '" aria-busy="' + loading + '"'
         + ' data-z="detail" data-i="0" data-id="' + item.action + '" data-action="' + item.action + '">' + inner
-        + (item.axis ? '<span class="setting-tick" aria-hidden="true">' + (applied ? icon('check') : '') + '</span>' : '') + '</button>';
+        + (radio ? '<span class="setting-tick" aria-hidden="true">' + (applied ? icon('check') : '') + '</span>' : '') + '</button>';
     }
-    setHTML(appearanceBack, command({ action: 'settings.back', label: t.group === 'rotation' ? 'Background' : 'Settings' }, icon('left') + '<span>' + (t.group === 'rotation' ? 'Background' : 'Settings') + '</span>', 'setting-back'));
+    setHTML(appearanceBack, command({ action: 'settings.back', label: parentName(t.group) }, icon('left') + '<span>' + esc(parentName(t.group)) + '</span>', 'setting-back'));
     setHTML(appearanceRows, detailSections(t).map(function (section) {
       return '<section class="setting-section' + (section.horizontal ? ' is-horizontal' : '') + ' section-' + section.id + '">'
-        + (section.title ? '<h3 class="setting-label" id="setting-' + section.id + '">' + section.title + '</h3>' : '')
-        + '<div class="setting-options"' + (section.items[0].axis ? ' role="radiogroup" aria-label="' + esc(section.title || LOOK_NAMES[section.id] || DETAIL_NAMES[t.group]) + '"' : '') + '>'
+        + (section.title ? '<h3 class="setting-label" id="setting-' + section.id + '">' + esc(section.title) + '</h3>' : '')
+        + '<div class="setting-options"' + (section.items.length && (section.items[0].axis || section.items[0].checked !== undefined) ? ' role="radiogroup" aria-label="' + esc(section.title || tr(LOOK_NAMES[section.id] || DETAIL_NAMES[t.group])) + '"' : '') + '>'
         + section.items.map(function (item) {
           var swatch = item.axis === 'bg', body = '';
           if (swatch || item.thumbnail) body += item.value === 'light' || item.value === 'dark'
             ? '<span class="setting-swatch swatch-' + item.value + '" aria-hidden="true"></span>'
-            : '<img class="setting-swatch" src="' + WP + S.c.wall + '-thumb.jpg" alt="">';
+            : '<img class="setting-swatch" src="' + esc(item.thumbSrc || thumbSrc(S.c.wall)) + '" alt="">';
+          else if (item.icon) body += '<span class="setting-swatch setting-icon" aria-hidden="true">' + icon(item.icon) + '</span>';
           body += '<span class="setting-copy"><span class="setting-name">' + esc(item.label) + '</span>'
             + (item.description ? '<span class="setting-description">' + esc(item.description) + '</span>' : '') + '</span>';
-          if (!item.axis) body += icon('right', 'setting-forward');
+          if (!item.axis && item.checked === undefined) body += icon('right', 'setting-forward');
           return command(item, body, item.description ? 'has-description' : '');
         }).join('') + '</div>'
         + (section.reason ? '<p class="setting-reason">' + esc(section.reason) + '</p>' : '') + '</section>';
     }).join(''));
-    if (S.pending) status = '<p>Loading ' + esc(S.pending.row === 'font' ? FONTS[S.pending.target.font].name : 'your choice') + '…</p><p>Back cancels this change.</p>';
+    if (S.pending) status = '<p>' + esc(tr('Loading {name}…', { name: S.pending.row === 'font' ? FONTS[S.pending.target.font].name : tr('your choice') })) + '</p><p>' + esc(tr('Back cancels this change.')) + '</p>';
     else if (error) {
-      status = '<p class="setting-error">' + (error.type === 'save' ? 'Couldn’t save this change.' : error.type === 'font' ? 'Couldn’t load ' + esc(FONTS[error.font].name) + '.' : 'Couldn’t load this appearance.') + ' Your current choice is kept.</p>'
-        + command({ action: 'settings.retry', label: 'Try again' }, '<span>Try again</span>', 'setting-retry');
+      status = '<p class="setting-error">' + esc(error.type === 'save' ? tr('Couldn’t save this change.') : error.type === 'font' ? tr('Couldn’t load {name}.', { name: FONTS[error.font].name }) : tr('Couldn’t load this appearance.')) + ' ' + esc(tr('Your current choice is kept.')) + '</p>'
+        + command({ action: 'settings.retry', label: tr('Try again') }, '<span>' + esc(tr('Try again')) + '</span>', 'setting-retry');
     }
+    if (t.group === 'photos') status = photoPanelHtml();
+    if (t.group === 'airplay' || t.group === 'airplayname') status = airplayPanelHtml();
     setHTML(appearanceStatus, status);
-    hint = selected.disabled ? '' : selected.action === 'settings.back' ? 'Return to ' + (t.group === 'rotation' ? 'Background' : 'Settings') : selected.action === 'settings.retry' ? 'Retry this change' : selected.axis ? 'Apply selected setting' : selected.action === 'background.wallpaper' ? 'Choose a wallpaper' : selected.action === 'background.rotation' ? 'Choose a rotation interval' : 'Open on the TV';
+    hint = selected.disabled ? '' : selected.action === 'settings.back' ? tr('Return to {name}', { name: parentName(t.group) }) : selected.action === 'settings.retry' ? tr('Retry this change') : selected.axis ? tr('Apply selected setting') : selected.action === 'background.wallpaper' ? tr('Choose a wallpaper') : selected.action === 'background.rotation' ? tr('Choose a rotation interval') : selected.action === 'info.weather' ? tr('Choose a place for the weather') : selected.action === 'background.photos' ? tr('Add photos from your phone') : selected.wallId ? tr('Use or remove this photo') : selected.airplay ? airplayHint(selected) : tr('Open on the TV');
     setHTML(appearanceDesc, hint ? '<span class="remote-key">OK</span><span>' + esc(hint) + '</span>' : '');
   }
   function renderWallpaper(t) {
     V.wallpaper.norm(t);
     appearanceEl.className = 'appearance detail-wallpaper';
-    appearanceTitle.textContent = 'Wallpaper';
+    appearanceTitle.textContent = tr('Wallpaper');
     appearanceRows.className = 'appearance-rows wallpaper-picker';
-    setHTML(appearanceBack, '<button type="button" tabindex="-1" class="setting-choice setting-back' + (t.f.zone === 'back' ? ' is-focus' : '') + '" data-z="wall-back" data-action="wallpaper.back">' + icon('left') + '<span>Background</span></button>');
-    setHTML(appearanceRows, '<div class="wallpaper-edge wallpaper-before" aria-hidden="true">' + icon('up') + '</div><div class="wallpaper-list" role="radiogroup" aria-label="Wallpaper"><div class="wallpaper-rows"></div></div><div class="wallpaper-edge wallpaper-after" aria-hidden="true">' + icon('down') + '</div>');
+    setHTML(appearanceBack, '<button type="button" tabindex="-1" class="setting-choice setting-back' + (t.f.zone === 'back' ? ' is-focus' : '') + '" data-z="wall-back" data-action="wallpaper.back">' + icon('left') + '<span>' + esc(tr('Background')) + '</span></button>');
+    setHTML(appearanceRows, '<div class="wallpaper-edge wallpaper-before" aria-hidden="true">' + icon('up') + '</div><div class="wallpaper-list" role="radiogroup" aria-label="' + esc(tr('Wallpaper')) + '"><div class="wallpaper-rows"></div></div><div class="wallpaper-edge wallpaper-after" aria-hidden="true">' + icon('down') + '</div>');
     var rows = appearanceRows.querySelector('.wallpaper-rows'), shown = wall(S.wallShown) || wall(S.c.wall), candidate = WALLS[t.i], status, note, hint;
     keyed(rows, WALLS.map(function (w) { return { key: w.id, wall: w }; }), function (row, item, i) {
       var visible = i >= t.top && i < t.top + WALL_VISIBLE, w = item.wall, image;
-      setContent(row, w.id + '|' + visible, function () { return '<span class="wallpaper-thumb">' + (visible ? '<img src="' + WP + w.id + '-thumb.jpg" alt="">' : '') + '</span><span class="setting-copy"><span class="setting-name">' + esc(w.name) + '</span></span><span class="setting-tick" aria-hidden="true"></span>'; });
+      setContent(row, w.id + '|' + visible, function () { return '<span class="wallpaper-thumb">' + (visible ? '<img src="' + esc(thumbSrc(w.id)) + '" alt="">' : '') + '</span><span class="setting-copy"><span class="setting-name">' + esc(wallName(w)) + '</span></span><span class="setting-tick" aria-hidden="true"></span>'; });
       row.className = 'setting-choice wallpaper-choice' + (t.f.zone === 'photo' && t.i === i ? ' is-focus' : '') + (w.id === S.c.wall ? ' is-applied' : '');
       row.style.transform = 'translate3d(0,' + (i * WALL_ROW) + 'px,0)'; row.style.visibility = visible ? 'visible' : 'hidden';
-      row.setAttribute('role', 'radio'); row.setAttribute('tabindex', '-1'); row.setAttribute('aria-label', w.name);
+      row.setAttribute('role', 'radio'); row.setAttribute('tabindex', '-1'); row.setAttribute('aria-label', wallName(w));
       row.setAttribute('aria-checked', String(w.id === S.c.wall)); row.setAttribute('aria-posinset', String(i + 1)); row.setAttribute('aria-setsize', String(WALLS.length));
       row.setAttribute('aria-busy', String(t.previewDue === w.id || S.wallPending === w.id));
       attrs(row, 'wall-choice', i, 'wallpaper.choose.' + w.id);
@@ -1449,14 +1610,14 @@
     rows.style.transform = 'translate3d(0,' + (-t.top * WALL_ROW) + 'px,0)';
     appearanceRows.querySelector('.wallpaper-before').className = 'wallpaper-edge wallpaper-before' + (t.top > 0 ? ' is-on' : '');
     appearanceRows.querySelector('.wallpaper-after').className = 'wallpaper-edge wallpaper-after' + (t.top + WALL_VISIBLE < WALLS.length ? ' is-on' : '');
-    note = t.previewDue ? 'Preparing ' + candidate.name + '…' : S.wallPending ? (t.applyPending ? 'Applying ' : 'Loading ') + candidate.name + '…' : shown.id === S.c.wall ? 'Applied' : 'Preview';
-    if (t.failedId) note = S.err ? 'Couldn’t save ' + wall(t.failedId).name + '.' : 'Couldn’t load ' + wall(t.failedId).name + '.';
-    status = '<p class="wallpaper-preview-name"><span>' + esc(shown.name) + '</span><span class="wallpaper-count">' + (wallIndex(shown.id) + 1) + ' of ' + WALLS.length + '</span></p><p class="wallpaper-preview-state' + (t.failedId ? ' setting-error' : '') + '">' + esc(note) + '</p>';
-    if (t.failedId) status += '<button type="button" tabindex="-1" class="setting-choice setting-retry' + (t.f.zone === 'retry' ? ' is-focus' : '') + '" data-z="wall-retry" data-action="wallpaper.retry">Try again</button>';
+    note = t.previewDue ? tr('Preparing {name}…', { name: wallName(candidate) }) : S.wallPending ? tr(t.applyPending ? 'Applying {name}…' : 'Loading {name}…', { name: wallName(candidate) }) : tr(shown.id === S.c.wall ? 'Applied' : 'Preview');
+    if (t.failedId) note = tr(S.err ? 'Couldn’t save {name}.' : 'Couldn’t load {name}.', { name: wallName(wall(t.failedId)) });
+    status = '<p class="wallpaper-preview-name"><span>' + esc(wallName(shown)) + '</span><span class="wallpaper-count">' + esc(tr('{a} of {b}', { a: wallIndex(shown.id) + 1, b: WALLS.length })) + '</span></p><p class="wallpaper-preview-state' + (t.failedId ? ' setting-error' : '') + '">' + esc(note) + '</p>';
+    if (t.failedId) status += '<button type="button" tabindex="-1" class="setting-choice setting-retry' + (t.f.zone === 'retry' ? ' is-focus' : '') + '" data-z="wall-retry" data-action="wallpaper.retry">' + esc(tr('Try again')) + '</button>';
     setHTML(appearanceStatus, status);
-    hint = t.f.zone === 'back' ? 'Return to Background' : t.f.zone === 'retry' ? 'Retry this photo' : 'Apply selected photo';
+    hint = t.f.zone === 'back' ? tr('Return to {name}', { name: tr('Background') }) : tr(t.f.zone === 'retry' ? 'Retry this photo' : 'Apply selected photo');
     if (t.f.zone === 'photo' && candidate.id === S.c.wall && !S.pending && !t.failedId) hint = '';
-    setHTML(appearanceDesc, hint ? '<span class="remote-key">OK</span><span>' + hint + '</span>' : '');
+    setHTML(appearanceDesc, hint ? '<span class="remote-key">OK</span><span>' + esc(hint) + '</span>' : '');
   }
   /* Keep the retry or membership state on the focused control. The stage-level line
      shares its position without changing the control's identity or key behaviour. */
@@ -1490,7 +1651,7 @@
     solid = /(?:^|\s)(?:u|btn|er-rm|dock-action|set-row|ph-action)(?:\s|$)/.test(target.className) && target.parentNode !== utilsEl && target.parentNode.className.indexOf('s-head') < 0;
     if (target === phAction && target.className.indexOf('is-focus') < 0) solid = false;
     focusStatus.className = 'focus-status is-on' + (solid ? ' dark-ink' : '') + (photoFree ? ' photo-status' : '');
-    focusStatus.textContent = text;
+    focusStatus.textContent = tr(text);
     focusStatus.style.left = clamp(x + 8, 112, 1808 - Math.min(w - 16, 800)) + 'px';
     focusStatus.style.top = clamp(y, 72, 988) + 'px';
     focusStatus.style.width = Math.min(w - 16, 800) + 'px';
@@ -1507,26 +1668,26 @@
         + '<div class="row-cue grid-before" data-slot="before" aria-hidden="true">' + icon('up') + '</div><div class="row-cue grid-after" data-slot="after" aria-hidden="true">' + icon('down') + '</div>';
     },
     editor: function () {
-      return '<h2 class="s-title">Apps on Home</h2><p class="s-sub" data-slot="sub"></p><div class="s-head" data-slot="head"></div>'
-        + '<p class="s-label z-home" data-slot="lh"></p><p class="s-label z-other">Not on Home</p>'
-        + '<div class="ed-home" data-slot="home"></div><div class="ed-order-break" data-slot="break">Then scroll</div><div class="ed-other-view" data-slot="ov"><div class="ed-other" data-slot="other"></div></div><div class="ed-origin" data-slot="origin"></div>'
+      return '<h2 class="s-title">' + esc(tr('Apps on Home')) + '</h2><p class="s-sub" data-slot="sub"></p><div class="s-head" data-slot="head"></div>'
+        + '<p class="s-label z-home" data-slot="lh"></p><p class="s-label z-other">' + esc(tr('Not on Home')) + '</p>'
+        + '<div class="ed-home" data-slot="home"></div><div class="ed-order-break" data-slot="break">' + esc(tr('Then scroll')) + '</div><div class="ed-other-view" data-slot="ov"><div class="ed-other" data-slot="other"></div></div><div class="ed-origin" data-slot="origin"></div>'
         + '<div class="row-cue editor-before" data-slot="otherBefore" aria-hidden="true">' + icon('up') + '</div><div class="row-cue editor-after" data-slot="otherAfter" aria-hidden="true">' + icon('down') + '</div>';
     },
-    settings: function () { return '<h2 class="s-title">Settings</h2><div class="settings-overview" data-slot="list"></div><p class="settings-overview-hint"><span class="remote-key">OK</span><span>Open selected group</span></p>'; },
+    settings: function () { return '<h2 class="s-title">' + esc(tr('Settings')) + '</h2><div class="settings-overview' + (settingsRows().length > 6 ? ' is-dense' : '') + '" data-slot="list"></div><p class="settings-overview-hint"><span class="remote-key">OK</span><span>' + esc(tr('Open selected group')) + '</span></p>'; },
     message: function (t) {
       var m = messageContent(t);
       return '<h2 class="msg-title">' + esc(m.title) + '</h2><p class="msg-line">' + esc(m.line) + '</p><p class="msg-note">' + esc(m.note) + '</p><div class="msg-acts" data-slot="acts"></div>';
     }
   };
   function gridTileHtml(id) {
-    var a = app(id), state = onHome(id) ? badge(true) + '<span>On Home</span>' : '';
+    var a = app(id), state = onHome(id) ? badge(true) + '<span>' + esc(tr('On Home')) + '</span>' : '';
     return '<span class="panel-content">' + appMark(a, 120, 72, 58) + '<span class="label">' + esc(a.name) + '</span></span><span class="state">' + state + '</span>';
   }
   var FILLS = {
     apps: function (t, el) {
       var f = t.f, items = appsItems(), n = items.length, rows = Math.ceil(n / COLS), vis = 3, row = Math.floor(f.i / COLS);
-      setHTML(el.title, 'All apps');
-      setHTML(el.sub, esc(catalog.loading ? 'Loading installed apps…' : catalog.error || (!n ? 'No installed apps found.' : '')));
+      setHTML(el.title, esc(tr('All apps')));
+      setHTML(el.sub, esc(catalog.loading ? tr('Loading installed apps…') : tr(catalog.error || (!n ? 'No installed apps found.' : ''))));
       setHTML(el.head, headButtons(appsHead(), f.zone === 'head' ? 0 : -1, 'apps'));
       el.head.className = 's-head' + (f.zone === 'head' ? ' is-awake' : '');
       if (f.zone === 'grid') { if (row < t.top) t.top = row; if (row > t.top + vis - 1) t.top = row - vis + 1; }
@@ -1547,11 +1708,11 @@
     editor: function (t, el) {
       var f = t.f, H = t.lifted ? t.lifted.order : S.c.home, O = otherGroups(), list = O.recent.concat(O.rest), full = S.c.home.length >= CAP;
       var entries = [], ys = [], y = 0, yf, minTop, maxTop = 0, rowEnd, before = false, afterRows = false;
-      var hint = catalog.error ? catalog.error : catalog.loading ? 'Loading installed apps…' : f.zone === 'head' && f.h === 0 ? undoCaption() : f.zone === 'home' && f.part === 'remove' ? (H.length <= 1 ? LAST : app(H[f.i]).name + ' stays installed.') : '';
-      setHTML(el.sub, editStatus(hint, t.lifted ? 'Moving ' + app(t.lifted.id).name + '. OK places it, Back puts it back.' : ''));
-      setHTML(el.head, headButtons([['undo', 'Undo', S.undo.length ? '' : 'is-idle', 'undo'], ['done', 'Done', '', 'check']], f.zone === 'head' ? f.h : -1, 'editor'));
+      var hint = catalog.error ? tr(catalog.error) : catalog.loading ? tr('Loading installed apps…') : f.zone === 'head' && f.h === 0 ? undoCaption() : f.zone === 'home' && f.part === 'remove' ? (H.length <= 1 ? LAST : tr('{name} stays installed.', { name: app(H[f.i]).name })) : '';
+      setHTML(el.sub, editStatus(hint, t.lifted ? tr('Moving {name}. OK places it, Back puts it back.', { name: app(t.lifted.id).name }) : ''));
+      setHTML(el.head, headButtons([['undo', tr('Undo'), S.undo.length ? '' : 'is-idle', 'undo'], ['done', tr('Done'), '', 'check']], f.zone === 'head' ? f.h : -1, 'editor'));
       el.head.className = 's-head' + (f.zone === 'head' ? ' is-awake' : '');
-      setHTML(el.lh, 'On Home <span class="s-count">' + S.c.home.length + ' of ' + CAP + '</span>');
+      setHTML(el.lh, esc(tr('On Home')) + ' <span class="s-count">' + esc(tr('{a} of {b}', { a: S.c.home.length, b: CAP })) + '</span>');
       el['break'].className = 'ed-order-break' + (H.length > editorCut() ? ' is-on' : '');
       el['break'].style.top = (264 + editorCut() * ED_ROW) + 'px';
 
@@ -1563,16 +1724,16 @@
         row.querySelector('.er-num').textContent = String(i + 1);
         row.firstChild.className = 'er-name' + (here && (f.part === 'name' || lifted) ? ' is-focus' : '');
         row.lastChild.className = 'er-rm' + (here && f.part === 'remove' && !lifted ? ' is-focus' : '') + (H.length <= 1 ? ' is-limit' : '');
-        row.lastChild.firstChild.textContent = H.length <= 1 ? LAST : 'Remove from Home';
+        row.lastChild.firstChild.textContent = tr(H.length <= 1 ? LAST : 'Remove from Home');
         attrs(row.firstChild, 'name', i, 'editor.move.' + it.id);
         attrs(row.lastChild, 'remove', i, 'editor.remove.' + it.id);
       });
       el.origin.className = 'ed-origin' + (t.lifted && t.lifted.from !== f.i ? ' is-on' : '');
       if (t.lifted) el.origin.style.transform = 'translate3d(0,' + (264 + editorHomeY(t.lifted.from) + 16) + 'px,0)';
 
-      if (O.recent.length) { entries.push({ key: 'sep-recent', sep: 'Recently removed', y: y }); y += ED_SEP; }
+      if (O.recent.length) { entries.push({ key: 'sep-recent', sep: tr('Recently removed'), y: y }); y += ED_SEP; }
       O.recent.forEach(function (id) { entries.push({ key: id, id: id, y: y }); ys.push(y); y += ED_ROW; });
-      if (O.recent.length && O.rest.length) { entries.push({ key: 'sep-rest', sep: 'Other installed apps', y: y }); y += ED_SEP; }
+      if (O.recent.length && O.rest.length) { entries.push({ key: 'sep-rest', sep: tr('Other installed apps'), y: y }); y += ED_SEP; }
       O.rest.forEach(function (id) { entries.push({ key: id, id: id, y: y }); ys.push(y); y += ED_ROW; });
       if (f.zone === 'other' && ys.length) {
         yf = ys[f.j] - (O.recent.length && (f.j === 0 || f.j === O.recent.length) ? ED_SEP : 0);
@@ -1593,7 +1754,7 @@
         if (it.sep) { setContent(row, 'sep|' + it.sep, function () { return esc(it.sep); }); row.className = 'eo-sep'; return; }
         j = list.indexOf(it.id); focus = f.zone === 'other' && j === f.j; a = app(it.id);
         setContent(row, it.id, function () { return '<span class="panel-content">' + smallMark(a) + '<span class="eo-text">' + esc(a.name) + '</span><span class="eo-verb"></span></span>'; });
-        setHTML(row.querySelector('.eo-verb'), focus ? '<span class="verb' + (full ? ' is-off' : '') + '">' + (full ? 'Home is full' : 'Add to Home') + '</span>' : '');
+        setHTML(row.querySelector('.eo-verb'), focus ? '<span class="verb' + (full ? ' is-off' : '') + '">' + esc(tr(full ? 'Home is full' : 'Add to Home')) + '</span>' : '');
         row.className = 'eo' + (focus ? ' is-focus' : '');
         row.setAttribute('role', 'button');
         attrs(row, 'other', j, 'editor.add.' + it.id);
@@ -1620,8 +1781,14 @@
   /* ---------- Atomic appearance bundles ---------- */
   var wallToken = 0, committedBundle = null, reflowToken = 0, fontSwitchToken = 0;
   function registeredMaterial(id) { return S.c.bg === 'photo' && S.c.material === 'soft' && !!wall(id); }
-  function matSrc(id, material) { return 'assets/materials/' + id + (material === 'soft' ? '-study-soft.jpg' : material === 'tint' ? '-field-clear.jpg' : '-field-frost.jpg'); }
-  function fieldSrc(id, material) { return 'assets/materials/' + id + (material === 'soft' ? '-field-blur.jpg' : material === 'tint' ? '-field-clear.jpg' : '-field-frost.jpg'); }
+  function matSrc(id, material) {
+    var name = material === 'soft' ? 'study-soft' : material === 'tint' ? 'field-clear' : 'field-frost';
+    return ownBase(id) ? ownBase(id) + name + '.jpg' : 'assets/materials/' + id + '-' + name + '.jpg';
+  }
+  function fieldSrc(id, material) {
+    var name = material === 'soft' ? 'field-blur' : material === 'tint' ? 'field-clear' : 'field-frost';
+    return ownBase(id) ? ownBase(id) + name + '.jpg' : 'assets/materials/' + id + '-' + name + '.jpg';
+  }
   function makeImg(cls, src) { var im = document.createElement('img'); im.className = cls; im.alt = ''; im._src = src; im.src = src; return im; }
   function whenReady(im, done) {
     var fin = false, timer = setTimeout(function () { finish(!!(im.complete && im.naturalWidth)); }, document.hidden ? 20000 : 8000);
@@ -1637,7 +1804,7 @@
   function swapImg(k, im) { var old = IMG[k]; if (old === im) return; im.style.cssText = old.style.cssText; if (old.id) im.id = old.id; old.parentNode.replaceChild(im, old); IMG[k] = im; }
   function bundleKey(look) { return look.wall + '|' + look.material; }
   function loadBundle(look, token, done) {
-    var imgs = { photo: makeImg('photo', WP + look.wall + '.jpg'), bg: makeImg('sheet-bg', WP + look.wall + '-panel.jpg') }, keys, left, allOk = true;
+    var imgs = { photo: makeImg('photo', photoSrc(look.wall)), bg: makeImg('sheet-bg', panelSrc(look.wall)) }, keys, left, allOk = true;
     imgs.mat = makeImg('mat-img', matSrc(look.wall, look.material));
     imgs.field = makeImg('ph-field-img', fieldSrc(look.wall, look.material));
     imgs.fieldAlt = makeImg('ph-field-img', fieldSrc(look.wall, look.material));
@@ -1772,6 +1939,246 @@
     if (top().id === 'home' || isSettingsDetail(top())) renderCaption(top(), homeState(top()));
     clockTimer = setTimeout(updateClock, 60000 - (Date.now() % 60000) + 30);
   }
+
+  /* ---------- Own photos: phone link, one-time preparation and removal (Fire TV) ---------- */
+  var photoLink = null, photoQueue = [], photoBusy = false, photoNote = null;
+  function photosOpen() { return S.stack.some(function (e) { return e.id === 'appearance' && e.group === 'photos'; }); }
+  /* The phone link (a small web server in the app) runs only while Own photos is open. */
+  function syncPhotoLink() {
+    if (!DEVICE.photos) return;
+    if (photosOpen() && !photoLink) {
+      photoLink = DEVICE.photos.start();
+      if (!photoLink.error && window.CleanFramePhotos) window.CleanFramePhotos.withQr(function () { if (photosOpen()) render(); });
+    } else if (!photosOpen() && photoLink) {
+      DEVICE.photos.stop(); photoLink = null; photoNote = null;
+    }
+  }
+  function photoPanelHtml() {
+    var link = photoLink || {}, qr = link.url && window.CleanFramePhotos ? window.CleanFramePhotos.qrSvg(link.url) : '';
+    if (link.error) return '<div class="photo-link is-error"><div class="photo-link-copy"><p class="photo-link-title">'
+      + esc(tr(link.error === 'network' ? 'This TV is not connected to a network.' : link.error === 'stopped' ? 'The phone link stopped. Open this screen again.' : 'The phone link could not start.'))
+      + '</p><p>' + esc(tr('Check the network, then open this screen again.')) + '</p></div></div>';
+    return '<div class="photo-link">' + (qr ? '<div class="photo-qr">' + qr + '</div>' : '') + '<div class="photo-link-copy">'
+      + '<p class="photo-link-title">' + esc(tr('Add from your phone')) + '</p>'
+      + '<p>' + esc(tr('Scan the code, or open this address in the phone’s browser (same Wi-Fi):')) + '</p>'
+      + '<p class="photo-link-url">' + esc(String(link.address || '').replace(/^http:\/\//, '')) + '</p>'
+      + '<p class="photo-link-pin">' + esc(tr('Code')) + ' <strong>' + esc(link.pin || '') + '</strong></p>'
+      + '<p class="photo-link-state">' + esc(photoNote || tr('Waiting for photos …')) + '</p></div></div>';
+  }
+  function openPhotoMenu(id) {
+    var w = wall(id);
+    if (!w) return;
+    push({ id: 'message', msg: 'photo', wallId: id, f: { b: 0 },
+      content: { title: wallName(w), line: tr('What would you like to do with this photo?'), note: '', actions: [['use', tr('Use as background')], ['remove', tr('Remove')], ['stay', tr('Cancel')]] } });
+  }
+  /* Rebuilds the gallery after own photos change. A removed current photo falls back to the first bundled one. */
+  function reloadWalls() {
+    var c;
+    WALLS = BUILTIN_WALLS.concat(ownWalls());
+    if (!wall(S.c.wall)) {
+      c = next(S.c.home.slice(), S.c.recent.slice()); c.wall = WALLS[0].id;
+      write(c, 'Wallpaper removed');
+      setLook({}, { transient: true });
+    }
+    norm(); render(); syncRotation();
+  }
+  function removeOwnPhoto(id) {
+    if (!DEVICE.photos || !wall(id) || !wall(id).custom) return;
+    DEVICE.photos.remove(id);
+    photoNote = tr('Removed.');
+    reloadWalls();
+  }
+  function nextPhotoNumber() { var n = 0; WALLS.forEach(function (w) { if (w.custom) n = Math.max(n, w.number); }); return n + 1; }
+  function renderPhotoNote() { if (top().id === 'appearance' && top().group === 'photos') renderAppearance(top()); }
+  function preparePhotos() {
+    var id, tools = window.CleanFramePhotos;
+    if (photoBusy || !photoQueue.length || !tools || !DEVICE.photos) return;
+    photoBusy = true; id = photoQueue.shift();
+    photoNote = tr('Preparing a photo …'); renderPhotoNote();
+    tools.prepare('/userwall/incoming/' + id + '.jpg', function (fraction) {
+      photoNote = tr('Preparing a photo … {p} %', { p: Math.round(fraction * 100) }); renderPhotoNote();
+    }, function (err, result) {
+      var number = nextPhotoNumber(), ok = !err;
+      if (ok) {
+        result.meta.number = number; result.meta.created = Date.now();
+        ok = tools.files.every(function (name) { return DEVICE.photos.save(id, name, result.files[name]); }) && DEVICE.photos.commit(id, result.meta);
+      }
+      if (!ok) DEVICE.photos.discard(id);
+      photoNote = ok ? tr('Added: {name}.', { name: tr('My photo {n}', { n: number }) }) : tr('This photo could not be prepared.');
+      photoBusy = false;
+      // Waiting on the Back control with nothing listed yet: move to the photo that just arrived.
+      if (ok && top().id === 'appearance' && top().group === 'photos' && top().f.action === 'settings.back') top().f.action = 'photos.item.' + id;
+      reloadWalls();
+      setTimeout(preparePhotos, 50);
+    });
+  }
+  /* Events from the app's photo server: the phone page opened, a photo arrived or was removed. */
+  function photoEvent(raw) {
+    var e;
+    try { e = JSON.parse(raw); } catch (err) { return; }
+    if (!e || typeof e.type !== 'string') return;
+    if (e.type === 'visited') photoNote = tr('Phone connected.');
+    else if (e.type === 'received' && /^u[0-9a-f]{12}$/.test(e.id)) { if (photoQueue.indexOf(e.id) < 0) photoQueue.push(e.id); preparePhotos(); }
+    else if (e.type === 'removed') { photoNote = tr('Removed on the phone.'); reloadWalls(); return; }
+    else if (e.type === 'stopped') photoLink = { error: 'stopped' };
+    renderPhotoNote();
+  }
+
+  /* ---------- AirPlay (Fire TV's built-in receiver) ---------- */
+  var airplayState = null;
+  function airplayRead() { airplayState = DEVICE.airplay ? DEVICE.airplay.state() : null; return airplayState; }
+  function airplayOpen() { var t = top(); return t.id === 'appearance' && (t.group === 'airplay' || t.group === 'airplayname'); }
+  /* From the app: a phone connected, a code appeared, a setting took effect. */
+  function airplayEvent(raw) {
+    var v;
+    try { v = JSON.parse(raw); } catch (err) { return; }
+    if (!v || typeof v !== 'object') return;
+    airplayState = v;
+    if (airplayOpen()) render();
+  }
+  function airplayWho(a) { return a.session && a.session.client ? a.session.client : tr('A device'); }
+  function airplaySections() {
+    var a = airplayState || {}, on = !!a.enabled, list = [], session = [];
+    list.push({ id: 'airplaypower', title: tr('AirPlay receiver'), horizontal: true, items: [
+      { action: 'airplay.on', label: tr('On'), checked: on, airplay: true },
+      { action: 'airplay.off', label: tr('Off'), checked: !on, airplay: true }
+    ] });
+    if (on && (a.session || a.code)) {
+      if ((a.session && a.session.mirroring) || a.code) session.push({ action: 'airplay.show', label: tr('Show'), airplay: true });
+      if (a.session) session.push({ action: 'airplay.stop', label: tr('Disconnect'), airplay: true });
+      list.push({ id: 'airplaysession', title: a.session ? tr('Connected: {name}', { name: airplayWho(a) }) : tr('Code for the iPhone'), horizontal: true, items: session });
+    }
+    list.push({ id: 'airplayname', title: tr('Name on the iPhone'), items: [{ action: 'airplay.name', label: a.name || 'Fire TV', disabled: !on, airplay: true }] });
+    list.push({ id: 'airplaycode', title: tr('Code'), horizontal: true, items: [
+      { action: 'airplay.code.off', label: tr('No code'), checked: !a.requireCode, disabled: !on, airplay: true },
+      { action: 'airplay.code.on', label: tr('With code'), checked: !!a.requireCode, disabled: !on, airplay: true }
+    ], reason: session.length ? '' : tr('With a code, the TV shows four digits that you type on the iPhone. Useful when others share your Wi-Fi.') });
+    return list;
+  }
+  var AIRPLAY_ROOMS = ['Living room', 'Bedroom', 'Kitchen', 'Kids’ room', 'Office', 'Guest room'];
+  /* The Fire TV's own name, then rooms; a name chosen earlier that is not in the list comes first. */
+  function airplayNames() {
+    var a = airplayState || {}, out = [];
+    [a.systemName, 'Fire TV'].concat(AIRPLAY_ROOMS.map(function (r) { return tr(r); })).forEach(function (n) {
+      if (n && out.indexOf(n) < 0) out.push(n);
+    });
+    if (a.name && out.indexOf(a.name) < 0) out.unshift(a.name);
+    return out;
+  }
+  function airplayNameSections() {
+    var a = airplayState || {};
+    return [{ id: 'airplaynames', title: '', items: airplayNames().map(function (n, i) {
+      return { action: 'airplay.setname.' + i, label: n, value: n, checked: n === a.name, airplay: true };
+    }), reason: tr('This is how the Fire TV appears in the Screen Mirroring list on iPhone, iPad and Mac.') }];
+  }
+  function airplayOk(item) {
+    var A = DEVICE.airplay, a = item.action;
+    if (!A) return;
+    if (a === 'airplay.on' || a === 'airplay.off') A.setEnabled(a === 'airplay.on');
+    else if (a === 'airplay.code.on' || a === 'airplay.code.off') A.setCode(a === 'airplay.code.on');
+    else if (a === 'airplay.name') { openAppearance('airplayname'); return; }
+    else if (a.indexOf('airplay.setname.') === 0) { A.setName(item.value); airplayRead(); pop(); return; }
+    else if (a === 'airplay.show') { if (!A.show()) airplayRead(); }
+    else if (a === 'airplay.stop') A.stop();
+    airplayRead();
+  }
+  function airplayHint(item) {
+    var a = item.action;
+    if (a === 'airplay.on') return tr('Switch AirPlay on');
+    if (a === 'airplay.off') return tr('Switch AirPlay off');
+    if (a === 'airplay.name') return tr('Choose the name');
+    if (a.indexOf('airplay.setname.') === 0) return tr('Use this name');
+    if (a === 'airplay.show') return tr('Show the mirrored screen');
+    if (a === 'airplay.stop') return tr('End the connection with {name}', { name: airplayWho(airplayState || {}) });
+    return tr('Apply selected setting');
+  }
+  function airplayPanelHtml() {
+    var a = airplayState, name, title, body = '', cls = '';
+    if (!a) return '';
+    name = a.name || 'Fire TV';
+    if (!a.enabled) {
+      cls = ' is-off'; title = tr('AirPlay is off');
+      body = '<p>' + esc(tr('The Fire TV does not appear on iPhones, iPads or Macs.')) + '</p>';
+    } else if (a.error) {
+      cls = ' is-error'; title = tr('AirPlay could not start');
+      body = '<p>' + esc(tr('Check that the Fire TV is connected to your Wi-Fi, then switch AirPlay off and on.')) + '</p>';
+    } else if (a.code) {
+      title = tr('Code for the iPhone');
+      body = '<p class="airplay-code">' + esc(a.code) + '</p><p>' + esc(tr('Type this code on the iPhone, iPad or Mac.')) + '</p>';
+    } else if (a.session) {
+      cls = ' is-live';
+      title = tr(a.session.mirroring ? '{name} is mirroring' : '{name} is connected', { name: airplayWho(a) });
+      body = '<p>' + esc(tr(a.session.mirroring ? 'Back on the remote ends the mirroring.' : 'Sound plays on the TV while the iPhone sends it.')) + '</p>';
+    } else if (!a.running) {
+      title = tr('AirPlay is starting …');
+      body = '<p>' + esc(tr('iPhone and Fire TV need the same Wi-Fi.')) + '</p>';
+    } else {
+      title = tr('Ready for AirPlay');
+      body = '<p>' + esc(tr('Mirror your iPhone:')) + '</p><ol class="airplay-steps">'
+        + '<li>' + esc(tr('Open Control Center on the iPhone.')) + '</li>'
+        + '<li>' + esc(tr('Tap Screen Mirroring.')) + '</li>'
+        + '<li>' + esc(tr('Choose “{name}”.', { name: name })) + '</li></ol>'
+        + '<p>' + esc(tr('For music, tap the AirPlay symbol in the app and choose “{name}”.', { name: name })) + '</p>'
+        + '<p class="airplay-note">' + esc(tr('iPhone and Fire TV need the same Wi-Fi.')) + '</p>';
+    }
+    return '<div class="airplay-panel' + cls + '"><div class="airplay-glyph" aria-hidden="true">' + icon('mirror') + '</div><div class="airplay-copy">'
+      + '<p class="airplay-title">' + esc(title) + '</p>' + (a.enabled && !a.error ? '<p class="airplay-name">' + esc(name) + '</p>' : '') + body + '</div></div>';
+  }
+
+  /* ---------- Weather: Open-Meteo current conditions, no account or key ---------- */
+  var WEATHER_KEY = 'cleanframe.weather.v1', WEATHER_REFRESH = 30 * 60000, WEATHER_RETRY = 5 * 60000, WEATHER_STALE = 3 * 3600000;
+  var weather = { place: null, at: 0, temp: null, code: null, day: true, request: 0, timer: 0 };
+  var WMO = [
+    [[0], 'Clear', 'sun'], [[1], 'Mainly clear', 'sun'], [[2], 'Partly cloudy', 'partly'], [[3], 'Overcast', 'cloud'],
+    [[45, 48], 'Fog', 'fog'], [[51, 53, 55], 'Drizzle', 'rain'], [[56, 57], 'Freezing drizzle', 'rain'],
+    [[61, 63, 65], 'Rain', 'rain'], [[66, 67], 'Freezing rain', 'rain'], [[71, 73, 75], 'Snow', 'snow'], [[77], 'Snow grains', 'snow'],
+    [[80, 81, 82], 'Rain showers', 'rain'], [[85, 86], 'Snow showers', 'snow'], [[95], 'Thunderstorm', 'storm'], [[96, 99], 'Thunderstorm with hail', 'storm']
+  ];
+  function weatherNow() {
+    var p = place(S.c.place), entry = null, i, glyph;
+    if (!p || weather.place !== p.id || weather.temp === null || Date.now() - weather.at > WEATHER_STALE) return null;
+    for (i = 0; i < WMO.length; i++) if (WMO[i][0].indexOf(weather.code) >= 0) entry = WMO[i];
+    if (!entry) entry = [[], '', 'cloud'];
+    glyph = !weather.day && entry[2] === 'sun' ? 'moon' : !weather.day && entry[2] === 'partly' ? 'cloud' : entry[2];
+    return { temp: Math.round(weather.temp) + '°', text: entry[1] === 'Clear' && weather.day ? 'Sunny' : entry[1], icon: glyph };
+  }
+  function loadWeatherCache() {
+    var saved;
+    try { saved = JSON.parse(localStorage.getItem(WEATHER_KEY) || 'null'); } catch (e) { saved = null; }
+    if (!saved || typeof saved.place !== 'string' || !isFinite(saved.at) || !isFinite(saved.temp) || !isFinite(saved.code)) return;
+    weather.place = saved.place; weather.at = +saved.at; weather.temp = +saved.temp; weather.code = +saved.code; weather.day = saved.day !== false;
+  }
+  function saveWeatherCache() {
+    try { localStorage.setItem(WEATHER_KEY, JSON.stringify({ place: weather.place, at: weather.at, temp: weather.temp, code: weather.code, day: weather.day })); } catch (e) { /* Weather still shows for this session. */ }
+  }
+  function scheduleWeather(delay) {
+    clearTimeout(weather.timer); weather.timer = 0;
+    if (place(S.c.place) && !document.hidden) weather.timer = setTimeout(function () { refreshWeather(false); }, delay || WEATHER_REFRESH);
+  }
+  function refreshWeather(force) {
+    var p = place(S.c.place), XHR = window.XMLHttpRequest, xhr, request;
+    clearTimeout(weather.timer); weather.timer = 0;
+    if (!p || !XHR || document.hidden) return;
+    if (!force && weather.place === p.id && Date.now() - weather.at < WEATHER_REFRESH) { scheduleWeather(WEATHER_REFRESH - (Date.now() - weather.at)); return; }
+    request = ++weather.request;
+    try {
+      xhr = new XHR();
+      xhr.open('GET', 'https://api.open-meteo.com/v1/forecast?latitude=' + Number(p.lat).toFixed(4) + '&longitude=' + Number(p.lon).toFixed(4) + '&current=temperature_2m,weather_code,is_day&timezone=auto');
+      xhr.timeout = 10000;
+      xhr.onload = function () {
+        var data = null, now;
+        if (request !== weather.request) return;
+        try { data = JSON.parse(xhr.responseText); } catch (e) { data = null; }
+        now = data && data.current;
+        if (xhr.status !== 200 || !now || !isFinite(now.temperature_2m) || now.temperature_2m === null || now.weather_code === null || !isFinite(now.weather_code)) { scheduleWeather(WEATHER_RETRY); return; }
+        weather.place = p.id; weather.at = Date.now(); weather.temp = +now.temperature_2m; weather.code = +now.weather_code; weather.day = now.is_day !== 0;
+        saveWeatherCache(); scheduleWeather(WEATHER_REFRESH);
+        if (top().id === 'home' || isSettingsDetail(top())) renderCaption(top(), homeState(top()));
+      };
+      xhr.onerror = xhr.ontimeout = function () { if (request === weather.request) scheduleWeather(WEATHER_RETRY); };
+      xhr.send();
+    } catch (e) { scheduleWeather(WEATHER_RETRY); }
+  }
   function focusStage() { try { stage.focus({ preventScroll: true }); } catch (e) { stage.focus(); } }
   function after() { norm(); render(); syncRotation(); }
   function goScene(name) {
@@ -1846,14 +2253,34 @@
   window.addEventListener('focus', function () { release(); focusStage(); after(); updateClock(); });
   document.addEventListener('visibilitychange', function () {
     heldKeys = {};
-    if (document.hidden) { pauseRotation(); clearTimeout(clockTimer); }
+    if (document.hidden) { pauseRotation(); clearTimeout(clockTimer); clearTimeout(weather.timer); }
     else {
       release();
       if (S.c.bg === 'photo' && !S.pending && !S.previewBundle && (!committedBundle || S.bundleKey !== bundleKey(S.c))) setLook({}, { transient: true, startup: true });
-      after(); updateClock(); focusStage();
+      after(); updateClock(); refreshWeather(false); focusStage();
     }
   });
   window.addEventListener('resize', fit);
+
+  /* Platform shells (the Fire TV app) forward keys the web page never receives, such as Back
+     and Menu, and tell Home when it returns to the front. */
+  var REMOTE_KEYS = ['left', 'right', 'up', 'down', 'ok', 'back'];
+  window.CleanFrameRemote = {
+    press: function (key) {
+      if (key === 'menu') { if (top().id === 'home') { openSettings(); after(); } return; }
+      if (REMOTE_KEYS.indexOf(key) >= 0) press(key);
+    },
+    home: function () { release(); goScene('home'); },
+    photoEvent: photoEvent,
+    airplayEvent: airplayEvent,
+    resume: function () {
+      release();
+      airplayRead();
+      photoLink = null; // The app stops the phone link while it is in the background.
+      if (DEVICE.refreshOnStart) refreshCatalog();
+      after(); updateClock(); refreshWeather(false); focusStage();
+    }
+  };
 
   /* Readable browser checks use the real state and actions, without fake outcomes. */
   var NAV = { left: 'left', right: 'right', up: 'up', down: 'down', ok: 'ok', enter: 'ok', back: 'back', escape: 'back' };
@@ -1888,6 +2315,14 @@
   /* ---------- Start ---------- */
   cueL.innerHTML = icon('left'); cueR.innerHTML = icon('right');
   initialise();
+  loadWeatherCache();
   setLook({}, { transient: true, startup: true });
-  norm(); render(); fit(); focusStage(); updateClock(); syncRotation();
+  norm(); render(); fit(); focusStage(); updateClock(); syncRotation(); refreshWeather(false);
+  // Platforms with fast local discovery fill names, icons and launch targets immediately.
+  if (DEVICE.refreshOnStart) refreshCatalog();
+  // Finish photos that arrived just before the app last closed.
+  if (DEVICE.photos) setTimeout(function () {
+    DEVICE.photos.list().forEach(function (p) { if (p.state === 'pending' && photoQueue.indexOf(p.id) < 0) photoQueue.push(p.id); });
+    preparePhotos();
+  }, 3000);
 })();

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">CleanFrame</string>
+
+    <!-- AirPlay receiver -->
+    <string name="airplay_channel">AirPlay</string>
+    <string name="airplay_ready">AirPlay: %1$s</string>
+    <string name="airplay_ready_detail">Ready for iPhone, iPad and Mac</string>
+    <string name="airplay_code_toast">AirPlay code %1$s – type it on your iPhone</string>
+    <string name="airplay_mirror_toast">%1$s is mirroring. Press Home to watch.</string>
+    <string name="airplay_a_device">A device</string>
+    <string name="mirror_hint">%1$s · Back ends screen mirroring</string>
+    <string name="mirror_connecting">Connecting to %1$s …</string>
+    <string name="mirror_paused">%1$s has paused screen mirroring.</string>
+    <string name="mirror_audio">Playing audio from %1$s</string>
+    <string name="mirror_code_title">AirPlay code</string>
+    <string name="mirror_code_hint">Type this code on your iPhone, iPad or Mac.</string>
+</resources>

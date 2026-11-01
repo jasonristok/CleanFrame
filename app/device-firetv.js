@@ -31,7 +31,9 @@
     { id: 'stremio', name: 'Stremio', mark: true, packages: ['com.stremio.one'], label: /^stremio\b/i },
     { id: 'jellyfin', name: 'Jellyfin', mark: true, packages: ['org.jellyfin.androidtv'], label: /^jellyfin\b/i },
     { id: 'crunchyroll', name: 'Crunchyroll', mark: true, packages: ['com.crunchyroll.crunchyroid'], label: /^crunchyroll\b/i },
-    { id: 'twitch', name: 'Twitch', mark: true, packages: [], label: /^twitch\b/i }
+    { id: 'twitch', name: 'Twitch', mark: true, packages: [], label: /^twitch\b/i },
+    /* IPTV player. Its mark is CleanFrame's own TV glyph (assets/icons/televizo.svg), not the app's logo. */
+    { id: 'televizo', name: 'Televizo', mark: true, packages: [], label: /^televizo\b/i }
   ];
   /* Fire OS screens that are not apps a person opens from Home. */
   var HIDDEN = ['com.amazon.tv.launcher', 'com.amazon.tv.settings', 'com.amazon.tv.settings.v2', 'com.android.settings', 'com.android.tv.settings',

@@ -551,7 +551,9 @@
       oldFocus = top().id === 'apps' ? ALPHA[top().f.i] : null;
       ALPHA = [];
       entries.forEach(function (entry) {
-        var id = PRIMARY.indexOf(entry.brand) >= 0 ? entry.brand : entry.appId, a;
+        // A brand id, unless Home already keeps this app under its package name (saved before the
+        // app was recognised as a brand): that entry stays and takes on the brand's mark.
+        var id = PRIMARY.indexOf(entry.brand) >= 0 && !app(entry.appId) ? entry.brand : entry.appId, a;
         if (!safeId(id) || !safeId(entry.appId) || ALPHA.indexOf(id) >= 0) return;
         a = app(id);
         if (!a) { a = { id: id }; APPS.push(a); }

@@ -15,6 +15,8 @@
 
   /* Device capabilities. device.js (Tizen) and device-firetv.js describe their platform. */
   var DEVICE = window.FrameDevice || {}, FEATURES = DEVICE.features || {}, DEFAULTS = DEVICE.defaults || {};
+  /* Fire TV: the top controls take a solid focus pill, and the app row shows no resting frame while they have focus. */
+  var STRONG_UTILS = DEVICE.platform === 'firetv';
   var SYSTEM = DEVICE.system || { name: 'Samsung', value: 'Home and TV settings', home: 'Samsung Home', homeDescription: 'Open Samsung’s Home screen', settings: 'TV settings', settingsDescription: 'Picture, sound and network settings' };
   var MARK_BRANDS = DEVICE.markBrands || ['hbomax', 'spotify', 'tubi'];
 
@@ -1165,7 +1167,7 @@
     syncPhotoLink();
     var t = top(), sheet = !!V[t.id].sheet, shown = wall(S.shown ? S.shown.wall : S.c.wall) || wall(S.c.wall) || WALLS[0], palette = ADAPTIVE_INK[shown.id];
     var adaptive = applyAdaptiveInk(palette), tr = adaptive && palette.tr ? palette.tr.pol : shown.ut.tr, br = adaptive && palette.br ? palette.br.pol : shown.ut.br;
-    stage.className = 'stage bg-' + S.c.bg + ' l-' + S.c.layout + ' v-' + S.variant + ' m-' + (materialApplies() ? S.c.material : 'none') + ' f-' + S.c.focus + ' a-' + S.c.apps + ' u-' + S.c.controls + ' g-' + S.geom + ' tone-' + shown.tone + ' tr-' + tr + ' br-' + br + wallClasses(shown) + inkRungClasses(palette, adaptive) + ' at-' + t.id + ' font-' + homeFont() + (homeFont() !== 'manrope' ? ' font-custom' : '') + (S.fontSwitch ? ' is-font-switch' : '') + (adaptive ? ' has-adaptive-ink adaptive-tl-' + palette.tl.pol : '') + (!adaptive && shown.clockInk ? ' has-clock-ink' : '') + (!adaptive && shown.dockClockInk ? ' has-dock-clock-ink' : '') + (registeredMaterial(shown.id) ? ' registered-material' : '') + (sheet ? ' is-sheet' : '') + (S.reflow ? ' is-reflow' : '');
+    stage.className = 'stage bg-' + S.c.bg + ' l-' + S.c.layout + ' v-' + S.variant + ' m-' + (materialApplies() ? S.c.material : 'none') + ' f-' + S.c.focus + ' a-' + S.c.apps + ' u-' + S.c.controls + ' g-' + S.geom + ' tone-' + shown.tone + ' tr-' + tr + ' br-' + br + wallClasses(shown) + inkRungClasses(palette, adaptive) + ' at-' + t.id + ' font-' + homeFont() + (homeFont() !== 'manrope' ? ' font-custom' : '') + (S.fontSwitch ? ' is-font-switch' : '') + (adaptive ? ' has-adaptive-ink adaptive-tl-' + palette.tl.pol : '') + (!adaptive && shown.clockInk ? ' has-clock-ink' : '') + (!adaptive && shown.dockClockInk ? ' has-dock-clock-ink' : '') + (registeredMaterial(shown.id) ? ' registered-material' : '') + (sheet ? ' is-sheet' : '') + (S.reflow ? ' is-reflow' : '') + (STRONG_UTILS ? ' p-firetv' : '');
     if (!adaptive && shown.clockInk) stage.style.setProperty('--clock-ink', shown.clockInk);
     else stage.style.removeProperty('--clock-ink');
     if (!adaptive && shown.dockClockInk) stage.style.setProperty('--dock-clock-ink', shown.dockClockInk);
@@ -1364,7 +1366,7 @@
     var items = hs.items, n = items.length, empty = hs.mode !== 'arrange' && !n, g = dockGeom(empty ? -1 : n);
     var anchor = clamp(hs.i, 0, Math.max(0, n - 1)), off = empty ? 0 : dockOffset(n, anchor, g);
     var full = false, ns = n;
-    var tileFocus = hs.zone === 'apps' || hs.zone === 'tiles', tileSel = hs.zone === 'util' || hs.zone === 'act' || hs.zone === 'ctl' || hs.zone === 'preview';
+    var tileFocus = hs.zone === 'apps' || hs.zone === 'tiles', tileSel = (hs.zone === 'util' && !STRONG_UTILS) || hs.zone === 'act' || hs.zone === 'ctl' || hs.zone === 'preview';
     var focusItem = items[anchor], s, ax, label, width;
 
     dock.className = 'dock' + (empty ? ' is-empty' : '');
@@ -1466,7 +1468,7 @@
   function renderList(hs) {
     var items = hs.items, n = items.length, compact = hs.mode === 'arrange', pitch = compact ? PH_COMPACT_PITCH : PH_PITCH;
     var anchor = clamp(hs.i, 0, Math.max(0, n - 1)), first, off, width, slot, y, s, label, aw, plateState;
-    var rowFocus = hs.zone === 'apps' || hs.zone === 'tiles', remembered = hs.zone === 'util' || hs.zone === 'act' || hs.zone === 'ctl' || hs.zone === 'preview';
+    var rowFocus = hs.zone === 'apps' || hs.zone === 'tiles', remembered = (hs.zone === 'util' && !STRONG_UTILS) || hs.zone === 'act' || hs.zone === 'ctl' || hs.zone === 'preview';
     photoModeTransition(compact);
     if (compact) {
       first = clamp(scroll.photoArrange, anchor - 7, anchor - 1);
@@ -2121,7 +2123,8 @@
         + '<li>' + esc(tr('Tap Screen Mirroring.')) + '</li>'
         + '<li>' + esc(tr('Choose “{name}”.', { name: name })) + '</li></ol>'
         + '<p>' + esc(tr('For music, tap the AirPlay symbol in the app and choose “{name}”.', { name: name })) + '</p>'
-        + '<p class="airplay-note">' + esc(tr('iPhone and Fire TV need the same Wi-Fi.')) + '</p>';
+        + '<p class="airplay-note">' + esc(tr('iPhone and Fire TV need the same Wi-Fi.')) + ' '
+        + esc(tr(a.autoOpen === false ? 'In another app, press Home to see the picture.' : 'The picture also opens over other apps.')) + '</p>';
     }
     return '<div class="airplay-panel' + cls + '"><div class="airplay-glyph" aria-hidden="true">' + icon('mirror') + '</div><div class="airplay-copy">'
       + '<p class="airplay-title">' + esc(title) + '</p>' + (a.enabled && !a.error ? '<p class="airplay-name">' + esc(name) + '</p>' : '') + body + '</div></div>';

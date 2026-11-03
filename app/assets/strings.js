@@ -207,6 +207,8 @@ window.CleanFrameStrings = {
     'Choose “{name}”.': 'Wähle „{name}“.',
     'For music, tap the AirPlay symbol in the app and choose “{name}”.': 'Für Musik tippst du in der App auf das AirPlay-Symbol und wählst „{name}“.',
     'iPhone and Fire TV need the same Wi-Fi.': 'iPhone und Fire TV müssen im selben WLAN sein.',
+    'In another app, press Home to see the picture.': 'In einer anderen App: Home drücken, dann erscheint das Bild.',
+    'The picture also opens over other apps.': 'Das Bild erscheint auch über anderen Apps.',
     'Code for the iPhone': 'Code für das iPhone',
     'Type this code on the iPhone, iPad or Mac.': 'Gib diesen Code am iPhone, iPad oder Mac ein.',
     '{name} is mirroring': '{name} spiegelt gerade',

@@ -368,7 +368,7 @@ public final class AirPlayHub implements AirPlayServer.Listener, Sinks.Factory, 
                 if (active) {
                     paused = false;
                     openMirror();
-                    if (!inFront()) toast(app.getString(R.string.airplay_mirror_toast, client.isEmpty() ? app.getString(R.string.airplay_a_device) : client));
+                    if (!inFront() && !canOpenFromBackground()) toast(app.getString(R.string.airplay_mirror_toast, client.isEmpty() ? app.getString(R.string.airplay_a_device) : client));
                 }
                 changed();
             }
@@ -470,6 +470,20 @@ public final class AirPlayHub implements AirPlayServer.Listener, Sinks.Factory, 
 
     private boolean inFront() {
         return foreground > 0;
+    }
+
+    /**
+     * Whether the mirror screen can come to the front while another app is open. Android 10 and later
+     * (Fire OS 8) allow that only with the "display over other apps" permission, which Fire OS grants
+     * only over ADB: adb shell appops set com.cleanframe.firetv SYSTEM_ALERT_WINDOW allow
+     */
+    boolean canOpenFromBackground() {
+        if (Build.VERSION.SDK_INT < 29) return true;
+        try {
+            return Settings.canDrawOverlays(app);
+        } catch (RuntimeException e) {
+            return false;
+        }
     }
 
     /** Opens the mirror screen. From another app this needs Android's permission to start activities from the background. */
@@ -579,6 +593,7 @@ public final class AirPlayHub implements AirPlayServer.Listener, Sinks.Factory, 
             o.put("name", name());
             o.put("systemName", systemName());
             o.put("requireCode", requireCode());
+            o.put("autoOpen", canOpenFromBackground());
             o.put("code", code == null ? JSONObject.NULL : code);
             if (session) {
                 JSONObject s = new JSONObject();

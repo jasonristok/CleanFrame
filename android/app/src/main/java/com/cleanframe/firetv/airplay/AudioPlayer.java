@@ -248,26 +248,61 @@ final class AudioPlayer implements Sinks.Audio {
         }
     }
 
-    @SuppressWarnings("deprecation") // the plain constructor for Android 5
-    private void openTrack(int channels) {
-        if (track != null) track.release();
-        int mask = channels == 1 ? AudioFormat.CHANNEL_OUT_MONO : AudioFormat.CHANNEL_OUT_STEREO;
-        int min = AudioTrack.getMinBufferSize(RATE, mask, AudioFormat.ENCODING_PCM_16BIT);
-        int size = Math.max(min * 2, RATE * 2 * channels / 8); // at least 125 ms
-        if (Build.VERSION.SDK_INT >= 23) {
-            track = new AudioTrack.Builder()
-                .setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MOVIE).build())
-                .setAudioFormat(new AudioFormat.Builder().setSampleRate(RATE).setEncoding(AudioFormat.ENCODING_PCM_16BIT).setChannelMask(mask).build())
-                .setBufferSizeInBytes(size)
-                .setTransferMode(AudioTrack.MODE_STREAM)
-                .build();
-        } else {
-            track = new AudioTrack(AudioManager.STREAM_MUSIC, RATE, mask, AudioFormat.ENCODING_PCM_16BIT, size, AudioTrack.MODE_STREAM);
+    /**
+     * Bytes for the AudioTrack buffer: at least 125 ms and twice the device minimum, rounded to
+     * whole sample frames (Fire OS rejects a size that is not, with "Invalid audio buffer size").
+     */
+    static int bufferBytes(int deviceMinimum, int channels) {
+        int frame = 2 * channels;
+        int size = Math.max(deviceMinimum > 0 ? 2 * deviceMinimum : 0, RATE * frame / 8);
+        return (size + frame - 1) / frame * frame;
+    }
+
+    private long trackFailedAt;
+
+    /** Opens the output for this channel count; false (and a pause of 2 s before trying again) if the device refuses. */
+    @SuppressWarnings("deprecation") // the plain constructor for Android 5 and as a fallback
+    private boolean openTrack(int channels) {
+        if (track != null) {
+            track.release();
+            track = null;
         }
+        trackChannels = 0;
+        if (System.currentTimeMillis() - trackFailedAt < 2000) return false;
+        int mask = channels == 1 ? AudioFormat.CHANNEL_OUT_MONO : AudioFormat.CHANNEL_OUT_STEREO;
+        int size = bufferBytes(AudioTrack.getMinBufferSize(RATE, mask, AudioFormat.ENCODING_PCM_16BIT), channels);
+        AudioTrack t = null;
+        if (Build.VERSION.SDK_INT >= 23) {
+            try {
+                t = new AudioTrack.Builder()
+                    .setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MOVIE).build())
+                    .setAudioFormat(new AudioFormat.Builder().setSampleRate(RATE).setEncoding(AudioFormat.ENCODING_PCM_16BIT).setChannelMask(mask).build())
+                    .setBufferSizeInBytes(size)
+                    .setTransferMode(AudioTrack.MODE_STREAM)
+                    .build();
+            } catch (RuntimeException e) {
+                Log.w(TAG, "AudioTrack.Builder refused " + size + " bytes: " + e.getMessage());
+            }
+        }
+        if (t == null) {
+            try {
+                t = new AudioTrack(AudioManager.STREAM_MUSIC, RATE, mask, AudioFormat.ENCODING_PCM_16BIT, size, AudioTrack.MODE_STREAM);
+            } catch (RuntimeException e) {
+                Log.w(TAG, "AudioTrack refused " + size + " bytes: " + e.getMessage());
+            }
+        }
+        if (t == null || t.getState() != AudioTrack.STATE_INITIALIZED) {
+            if (t != null) t.release();
+            trackFailedAt = System.currentTimeMillis();
+            Log.e(TAG, "no audio output for " + channels + " channels");
+            return false;
+        }
+        track = t;
         trackChannels = channels;
         appliedGain = -1f;
         track.play();
-        Log.i(TAG, "audio track " + RATE + " Hz, " + channels + " channels, buffer " + size + " bytes, state " + track.getState());
+        Log.i(TAG, "audio track " + RATE + " Hz, " + channels + " channels, buffer " + size + " bytes");
+        return true;
     }
 
     private void applyGain() {
@@ -279,13 +314,13 @@ final class AudioPlayer implements Sinks.Audio {
     }
 
     private void writeShorts(short[] s, int count, int channels) {
-        if (track == null || trackChannels != channels) openTrack(channels);
+        if ((track == null || trackChannels != channels) && !openTrack(channels)) return;
         applyGain();
         track.write(s, 0, count);
     }
 
     private void writeBytes(byte[] b, int count, int channels) {
-        if (track == null || trackChannels != channels) openTrack(channels);
+        if ((track == null || trackChannels != channels) && !openTrack(channels)) return;
         applyGain();
         track.write(b, 0, count);
     }
